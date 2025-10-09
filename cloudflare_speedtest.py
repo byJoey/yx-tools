@@ -4,6 +4,7 @@
 Cloudflare SpeedTest 跨平台自动化脚本
 支持 Windows、Linux、macOS (Darwin)
 支持完整的 Cloudflare 数据中心机场码映射
+支持 IPv4 和 IPv6 双栈测速
 """
 
 import os
@@ -12,6 +13,7 @@ import platform
 import subprocess
 import requests
 import json
+import re
 from pathlib import Path
 
 
@@ -155,12 +157,49 @@ AIRPORT_CODES_URL = "https://raw.githubusercontent.com/cloudflare/cf-ui/master/p
 AIRPORT_CODES_FILE = "airport_codes.json"
 
 # Cloudflare IP列表URL
-CLOUDFLARE_IP_URL = "https://www.cloudflare.com/ips-v4/"
-CLOUDFLARE_IP_FILE = "Cloudflare.txt"
+CLOUDFLARE_IPV4_URL = "https://www.cloudflare.com/ips-v4/"
+CLOUDFLARE_IPV6_URL = "https://www.cloudflare.com/ips-v6/"
+CLOUDFLARE_IPV4_FILE = "Cloudflare_IPv4.txt"
+CLOUDFLARE_IPV6_FILE = "Cloudflare_IPv6.txt"
 
 # GitHub Release版本
 GITHUB_VERSION = "v2.2.6"
 GITHUB_REPO = "ShadowObj/CloudflareSpeedTest"
+
+
+def is_ipv6(ip_str):
+    """检查是否是IPv6地址"""
+    # 移除端口号（如果有）
+    if '[' in ip_str and ']' in ip_str:
+        # [IPv6]:port 格式
+        ip_str = ip_str.split(']')[0].replace('[', '')
+    elif ip_str.count(':') > 1:
+        # 可能是纯IPv6地址
+        parts = ip_str.rsplit(':', 1)
+        if parts[0].count(':') > 0:  # 确认是IPv6
+            ip_str = parts[0]
+    
+    # IPv6地址包含冒号，且冒号数量 >= 2
+    return ':' in ip_str and ip_str.count(':') >= 2
+
+
+def validate_ipv6(ip_str):
+    """验证IPv6地址格式"""
+    try:
+        import socket
+        socket.inet_pton(socket.AF_INET6, ip_str)
+        return True
+    except:
+        return False
+
+
+def format_ipv6_with_port(ip, port):
+    """格式化IPv6地址和端口"""
+    # 如果IP已经包含方括号，直接使用
+    if ip.startswith('[') and ']' in ip:
+        return f"{ip}:{port}"
+    # 否则添加方括号
+    return f"[{ip}]:{port}"
 
 
 def get_system_info():
@@ -217,7 +256,6 @@ def download_file(url, filename):
         print(f"✅ 下载完成: {filename}")
         return True
     except Exception:
-        # 静默失败，继续尝试其他方法
         pass
     
     # 方法2: 尝试使用 wget
@@ -230,10 +268,8 @@ def download_file(url, filename):
             print(f"✅ 下载完成: {filename}")
             return True
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        # wget 不可用，静默继续
         pass
     except Exception:
-        # wget 执行失败，静默继续
         pass
     
     # 方法3: 尝试使用 curl
@@ -246,13 +282,11 @@ def download_file(url, filename):
             print(f"✅ 下载完成: {filename}")
             return True
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        # curl 不可用，静默继续
         pass
     except Exception:
-        # curl 执行失败，静默继续
         pass
     
-    # 方法3.5: Windows PowerShell 下载
+    # 方法4: Windows PowerShell 下载
     if sys.platform == "win32":
         try:
             ps_cmd = f'Invoke-WebRequest -Uri "{url}" -OutFile "{filename}"'
@@ -264,23 +298,20 @@ def download_file(url, filename):
                 print(f"✅ 下载完成: {filename}")
                 return True
         except (subprocess.TimeoutExpired, FileNotFoundError):
-            # PowerShell 不可用，静默继续
             pass
         except Exception:
-            # PowerShell 执行失败，静默继续
             pass
     
-    # 方法4: 尝试使用 urllib
+    # 方法5: 尝试使用 urllib
     try:
         import urllib.request
         urllib.request.urlretrieve(url, filename)
         print(f"✅ 下载完成: {filename}")
         return True
     except Exception:
-        # urllib 下载失败，静默继续
         pass
     
-    # 方法5: 尝试 HTTP 版本
+    # 方法6: 尝试 HTTP 版本
     if url.startswith("https://"):
         http_url = url.replace("https://", "http://")
         try:
@@ -294,10 +325,8 @@ def download_file(url, filename):
             print(f"✅ 下载完成: {filename}")
             return True
         except Exception:
-            # HTTP 下载失败，静默继续
             pass
     
-    # 所有方法都失败
     print("❌ 下载失败")
     return False
 
@@ -312,24 +341,19 @@ def download_cloudflare_speedtest(os_type, arch_type):
     
     print("CloudflareSpeedTest 不存在，开始下载...")
     
-    # 构建下载URL
     download_url = f"https://github.com/{GITHUB_REPO}/releases/download/{GITHUB_VERSION}/{exec_name}"
     
     if not download_file(download_url, exec_name):
-        # 备用方案: 尝试 HTTP 下载
         http_url = download_url.replace("https://", "http://")
         if not download_file(http_url, exec_name):
-            # 所有自动下载都失败，提供手动下载说明
             print("\n" + "="*60)
             print("自动下载失败，请手动下载 CloudflareSpeedTest:")
             print(f"下载地址: {download_url}")
             print(f"保存为: {exec_name}")
             print("="*60)
             
-            # 检查是否有手动下载的文件
             if os.path.exists(exec_name):
                 print(f"找到手动下载的文件: {exec_name}")
-                # 手动下载的文件也需要赋予执行权限
                 if os_type != "win":
                     os.chmod(exec_name, 0o755)
                     print(f"已赋予执行权限: {exec_name}")
@@ -337,7 +361,6 @@ def download_cloudflare_speedtest(os_type, arch_type):
                 print("未找到 CloudflareSpeedTest 文件，程序无法继续")
                 sys.exit(1)
     
-    # 在Unix系统上赋予执行权限
     if os_type != "win":
         os.chmod(exec_name, 0o755)
         print(f"已赋予执行权限: {exec_name}")
@@ -345,20 +368,28 @@ def download_cloudflare_speedtest(os_type, arch_type):
     return exec_name
 
 
-def download_cloudflare_ips():
+def download_cloudflare_ips(use_ipv6=False):
     """下载 Cloudflare IP 列表"""
-    print("正在下载 Cloudflare IP 列表...")
+    if use_ipv6:
+        url = CLOUDFLARE_IPV6_URL
+        filename = CLOUDFLARE_IPV6_FILE
+        ip_type = "IPv6"
+    else:
+        url = CLOUDFLARE_IPV4_URL
+        filename = CLOUDFLARE_IPV4_FILE
+        ip_type = "IPv4"
     
-    if not download_file(CLOUDFLARE_IP_URL, CLOUDFLARE_IP_FILE):
-        print("下载 Cloudflare IP 列表失败")
+    print(f"正在下载 Cloudflare {ip_type} 列表...")
+    
+    if not download_file(url, filename):
+        print(f"下载 Cloudflare {ip_type} 列表失败")
         sys.exit(1)
     
-    # 检查文件是否为空
-    if os.path.getsize(CLOUDFLARE_IP_FILE) == 0:
-        print("Cloudflare IP 列表文件为空")
+    if os.path.getsize(filename) == 0:
+        print(f"Cloudflare {ip_type} 列表文件为空")
         sys.exit(1)
     
-    print(f"Cloudflare IP 列表已保存到: {CLOUDFLARE_IP_FILE}")
+    print(f"Cloudflare {ip_type} 列表已保存到: {filename}")
 
 
 def load_local_airport_codes():
@@ -385,7 +416,6 @@ def save_airport_codes():
 
 def display_airport_codes(region_filter=None):
     """显示所有支持的机场码，可按地区筛选"""
-    # 按地区分组
     regions = {}
     for code, info in AIRPORT_CODES.items():
         region = info.get('region', '其他')
@@ -393,11 +423,9 @@ def display_airport_codes(region_filter=None):
             regions[region] = []
         regions[region].append((code, info))
     
-    # 显示统计信息
     print(f"\n支持的机场码列表（共 {len(AIRPORT_CODES)} 个数据中心）")
     print("=" * 70)
     
-    # 如果指定了地区筛选
     if region_filter:
         region_filter = region_filter.strip()
         if region_filter in regions:
@@ -411,7 +439,6 @@ def display_airport_codes(region_filter=None):
             print(f"可用地区: {', '.join(sorted(regions.keys()))}")
         return
     
-    # 显示所有地区
     region_order = ["亚太", "北美", "欧洲", "中东", "南美", "非洲", "其他"]
     for region in region_order:
         if region in regions:
@@ -447,12 +474,10 @@ def find_airport_by_name(query):
     if not query:
         return None
     
-    # 先尝试精确匹配机场码
     query_upper = query.upper()
     if query_upper in AIRPORT_CODES:
         return query_upper
     
-    # 构建城市名称到机场码的映射
     results = []
     
     for code, info in AIRPORT_CODES.items():
@@ -460,29 +485,23 @@ def find_airport_by_name(query):
         country = info.get('country', '').lower()
         query_lower = query.lower()
         
-        # 精确匹配城市名称
         if name == query_lower:
             return code
         
-        # 模糊匹配（包含关系）
         if query_lower in name or name in query_lower:
-            results.append((code, info, 1))  # 优先级1
+            results.append((code, info, 1))
         elif query_lower in country:
-            results.append((code, info, 2))  # 优先级2
+            results.append((code, info, 2))
     
-    # 如果有匹配结果
     if results:
-        # 按优先级排序
         results.sort(key=lambda x: x[2])
         
-        # 如果只有一个结果，直接返回
         if len(results) == 1:
             return results[0][0]
         
-        # 如果有多个结果，显示让用户选择
         print(f"\n找到 {len(results)} 个匹配的城市:")
         print("-" * 60)
-        for idx, (code, info, _) in enumerate(results[:10], 1):  # 最多显示10个
+        for idx, (code, info, _) in enumerate(results[:10], 1):
             region = info.get('region', '')
             country = info.get('country', '')
             print(f"  {idx}. {code:5s} - {info['name']:20s} ({country}) [{region}]")
@@ -513,7 +532,6 @@ def display_preset_configs():
 
 def get_user_input():
     """获取用户输入参数"""
-    # 询问功能选择
     print("\n功能选择:")
     print("  1. 常规测速 - 测试指定机场码的IP速度")
     print("  2. 优选反代 - 从CSV文件生成反代IP列表")
@@ -522,12 +540,23 @@ def get_user_input():
     if not choice:
         choice = "1"
     
+    # 询问IP协议类型
+    print("\nIP协议选择:")
+    print("  1. IPv4")
+    print("  2. IPv6")
+    print("  3. IPv4 + IPv6 双栈")
+    
+    ip_choice = input("\n请选择IP协议 [默认: 1]: ").strip()
+    if not ip_choice:
+        ip_choice = "1"
+    
+    use_ipv6 = ip_choice in ["2", "3"]
+    use_ipv4 = ip_choice in ["1", "3"]
+    
     if choice == "2":
-        # 优选反代模式
-        return handle_proxy_mode()
+        return handle_proxy_mode(use_ipv6, use_ipv4)
     else:
-        # 常规测速模式
-        return handle_normal_mode()
+        return handle_normal_mode(use_ipv6, use_ipv4)
 
 
 def select_csv_file():
@@ -548,64 +577,75 @@ def select_csv_file():
                 return None
 
 
-
-
-
-
-def handle_proxy_mode():
+def handle_proxy_mode(use_ipv6=False, use_ipv4=True):
     """处理优选反代模式"""
     print("\n优选反代模式")
     print("=" * 50)
     print("此功能将从CSV文件中提取IP和端口信息，生成反代IP列表")
-    print("CSV文件格式要求：")
+    
+    if use_ipv6 and use_ipv4:
+        print("支持: IPv4 + IPv6 双栈")
+    elif use_ipv6:
+        print("支持: 仅 IPv6")
+    else:
+        print("支持: 仅 IPv4")
+    
+    print("\nCSV文件格式要求：")
     print("  - 包含 'IP 地址' 和 '端口' 列")
     print("  - 或包含 'ip' 和 'port' 列")
     print("  - 支持逗号分隔的CSV格式")
     print("=" * 50)
     
-    # 选择CSV文件
     csv_file = select_csv_file()
     
     if not csv_file:
         print("未选择有效文件，退出优选反代模式")
-        return None, None, None, None
+        return None, None, None, None, use_ipv6
     
-    # 生成反代IP列表
     print(f"\n正在处理CSV文件: {csv_file}")
-    success = generate_proxy_list(csv_file, "ips_ports.txt")
+    
+    # 根据IP类型生成不同的输出文件
+    if use_ipv6 and use_ipv4:
+        output_file = "ips_ports_dual.txt"
+    elif use_ipv6:
+        output_file = "ips_ports_ipv6.txt"
+    else:
+        output_file = "ips_ports_ipv4.txt"
+    
+    success = generate_proxy_list(csv_file, output_file, use_ipv6, use_ipv4)
     
     if success:
         print("\n优选反代功能完成！")
         print("生成的文件:")
-        print("  - ips_ports.txt (反代IP列表)")
+        print(f"  - {output_file} (反代IP列表)")
         print("  - 格式: IP:端口 (每行一个)")
+        
+        if use_ipv6:
+            print("  - IPv6格式: [IPv6地址]:端口")
+        
         print("\n使用说明:")
         print("  - 可直接用于反代配置")
         print("  - 支持各种代理软件")
         print("  - 建议定期更新IP列表")
         
-        # 直接开始测速
         print("\n" + "=" * 50)
         print("开始对反代IP列表进行测速...")
         
-        # 使用默认测速参数
         dn_count = "10"
         speed_limit = "10" 
         time_limit = "10"
         
         print(f"测速参数: 测试{dn_count}个IP, 速度下限{speed_limit}MB/s, 延迟上限{time_limit}ms")
         
-        # 运行测速
-        run_speedtest_with_file("ips_ports.txt", dn_count, speed_limit, time_limit)
-        return None, None, None, None
+        run_speedtest_with_file(output_file, dn_count, speed_limit, time_limit, use_ipv6)
+        return None, None, None, None, use_ipv6
     else:
         print("\n优选反代功能失败")
-        return None, None, None, None
+        return None, None, None, None, use_ipv6
 
 
-def handle_normal_mode():
+def handle_normal_mode(use_ipv6=False, use_ipv4=True):
     """处理常规测速模式"""
-    # 询问显示方式
     print("\n显示选项:")
     print("  1. 显示热门机场码")
     print("  2. 显示全部机场码")
@@ -626,16 +666,13 @@ def handle_normal_mode():
     else:
         display_popular_codes()
     
-    # 获取机场码
     while True:
         user_input = input("\n请输入机场码或城市名称 [默认: 香港]: ").strip()
         if not user_input:
             user_input = "香港"
         
-        # 转换为大写用于特殊命令检查
         user_input_upper = user_input.upper()
         
-        # 检查特殊命令
         if user_input_upper == "LIST":
             display_airport_codes()
             continue
@@ -654,7 +691,6 @@ def handle_normal_mode():
             display_popular_codes()
             continue
         
-        # 尝试查找机场码
         cfcolo = find_airport_by_name(user_input)
         
         if cfcolo and cfcolo in AIRPORT_CODES:
@@ -668,41 +704,34 @@ def handle_normal_mode():
             print("  提示: 输入 HELP 查看帮助，输入 LIST 查看完整列表")
             print("  📝 可以尝试: 香港、新加坡、东京、HKG、SIN、NRT")
     
-    # 显示预设配置选项
     display_preset_configs()
     
-    # 获取配置选择
     while True:
         config_choice = input("\n请选择配置 [默认: 1]: ").strip()
         if not config_choice:
             config_choice = "1"
         
         if config_choice == "1":
-            # 快速测试
             dn_count = "10"
             speed_limit = "1"
             time_limit = "1000"
             print("✓ 已选择: 快速测试 (10个IP, 1MB/s, 1000ms)")
             break
         elif config_choice == "2":
-            # 标准测试
             dn_count = "20"
             speed_limit = "2"
             time_limit = "500"
             print("✓ 已选择: 标准测试 (20个IP, 2MB/s, 500ms)")
             break
         elif config_choice == "3":
-            # 高质量测试
             dn_count = "50"
             speed_limit = "5"
             time_limit = "200"
             print("✓ 已选择: 高质量测试 (50个IP, 5MB/s, 200ms)")
             break
         elif config_choice == "4":
-            # 自定义配置
             print("\n自定义配置:")
             
-            # 获取测试IP数量
             while True:
                 dn_count = input("请输入要测试的 IP 数量 [默认: 10]: ").strip()
                 if not dn_count:
@@ -722,7 +751,6 @@ def handle_normal_mode():
                 except ValueError:
                     print("✗ 请输入有效的数字")
             
-            # 获取下载速度下限
             while True:
                 speed_limit = input("请输入下载速度下限 (MB/s) [默认: 1]: ").strip()
                 if not speed_limit:
@@ -743,7 +771,6 @@ def handle_normal_mode():
                 except ValueError:
                     print("✗ 请输入有效的数字")
             
-            # 获取延迟阈值
             while True:
                 time_limit = input("请输入延迟阈值 (ms) [默认: 1000]: ").strip()
                 if not time_limit:
@@ -769,11 +796,11 @@ def handle_normal_mode():
         else:
             print("✗ 无效选择，请输入 1-4")
     
-    return cfcolo, dn_count, speed_limit, time_limit
+    return cfcolo, dn_count, speed_limit, time_limit, use_ipv6
 
 
-def generate_proxy_list(result_file="result.csv", output_file="ips_ports.txt"):
-    """从测速结果生成反代IP列表"""
+def generate_proxy_list(result_file="result.csv", output_file="ips_ports.txt", use_ipv6=False, use_ipv4=True):
+    """从测速结果生成反代IP列表（支持IPv4和IPv6）"""
     if not os.path.exists(result_file):
         print(f"未找到测速结果文件: {result_file}")
         return False
@@ -783,7 +810,6 @@ def generate_proxy_list(result_file="result.csv", output_file="ips_ports.txt"):
         
         print(f"\n正在生成反代IP列表...")
         
-        # 读取CSV文件
         with open(result_file, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             rows = list(reader)
@@ -792,10 +818,10 @@ def generate_proxy_list(result_file="result.csv", output_file="ips_ports.txt"):
             print("测速结果文件为空")
             return False
         
-        # 生成反代IP列表
-        proxy_ips = []
+        proxy_ips_v4 = []
+        proxy_ips_v6 = []
+        
         for row in rows:
-            # 尝试多种可能的列名
             ip = None
             port = None
             
@@ -817,61 +843,87 @@ def generate_proxy_list(result_file="result.csv", output_file="ips_ports.txt"):
                     port = row[key].strip()
                     break
             
-            # 如果没有找到端口，使用默认值
             if not port:
                 port = '443'
             
-            if ip and port:
+            if ip:
                 # 提取IP地址（去掉端口部分）
-                if ':' in ip:
+                if ':' in ip and not is_ipv6(ip):
+                    # IPv4:port 格式
                     ip = ip.split(':')[0]
-                proxy_ips.append(f"{ip}:{port}")
+                elif '[' in ip and ']' in ip:
+                    # [IPv6]:port 格式
+                    ip = ip.split(']')[0].replace('[', '')
+                
+                # 判断IP类型并添加到相应列表
+                if is_ipv6(ip):
+                    if use_ipv6 and validate_ipv6(ip):
+                        formatted = format_ipv6_with_port(ip, port)
+                        proxy_ips_v6.append(formatted)
+                else:
+                    if use_ipv4:
+                        proxy_ips_v4.append(f"{ip}:{port}")
+        
+        # 合并列表
+        all_proxy_ips = []
+        if use_ipv4:
+            all_proxy_ips.extend(proxy_ips_v4)
+        if use_ipv6:
+            all_proxy_ips.extend(proxy_ips_v6)
         
         # 保存到文件
         with open(output_file, 'w', encoding='utf-8') as f:
-            for proxy in proxy_ips:
+            for proxy in all_proxy_ips:
                 f.write(proxy + '\n')
         
         print(f"反代IP列表已生成: {output_file}")
-        print(f"共生成 {len(proxy_ips)} 个反代IP")
-        print(f"📝 格式: IP:端口 (如: 1.2.3.4:443)")
         
-        # 显示前10个IP作为示例
-        if proxy_ips:
+        if use_ipv4:
+            print(f"IPv4: {len(proxy_ips_v4)} 个")
+        if use_ipv6:
+            print(f"IPv6: {len(proxy_ips_v6)} 个")
+        print(f"总计: {len(all_proxy_ips)} 个反代IP")
+        
+        # 显示示例
+        if all_proxy_ips:
             print(f"\n前10个反代IP示例:")
-            for i, proxy in enumerate(proxy_ips[:10], 1):
-                print(f"  {i:2d}. {proxy}")
-            if len(proxy_ips) > 10:
-                print(f"  ... 还有 {len(proxy_ips) - 10} 个IP")
+            for i, proxy in enumerate(all_proxy_ips[:10], 1):
+                ip_type = "IPv6" if '[' in proxy else "IPv4"
+                print(f"  {i:2d}. {proxy:45s} ({ip_type})")
+            if len(all_proxy_ips) > 10:
+                print(f"  ... 还有 {len(all_proxy_ips) - 10} 个IP")
         
         return True
         
     except Exception as e:
         print(f"生成反代IP列表失败: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
-def run_speedtest_with_file(ip_file, dn_count, speed_limit, time_limit):
+def run_speedtest_with_file(ip_file, dn_count, speed_limit, time_limit, use_ipv6=False):
     """使用指定IP文件运行测速"""
     try:
-        # 获取系统信息
         os_type, arch_type = get_system_info()
         exec_name = download_cloudflare_speedtest(os_type, arch_type)
         
-        # 构建命令
         cmd = [
             f"./{exec_name}",
             "-f", ip_file,
             "-dn", dn_count,
             "-sl", speed_limit,
             "-tl", time_limit,
-            "-p", "20"  # 显示前20个结果
+            "-p", "20"
         ]
+        
+        # 添加IPv6标志
+        if use_ipv6:
+            cmd.append("-ipv6")
         
         print(f"\n运行命令: {' '.join(cmd)}")
         print("=" * 50)
         
-        # 运行测速 - 实时显示输出
         print("正在运行测速，请稍候...")
         result = subprocess.run(cmd, text=True)
         
@@ -881,7 +933,6 @@ def run_speedtest_with_file(ip_file, dn_count, speed_limit, time_limit):
         else:
             print(f"\n测速失败，返回码: {result.returncode}")
         
-        # 等待用户按键，不自动关闭窗口
         input("\n按回车键退出...")
         return 0
         
@@ -890,29 +941,36 @@ def run_speedtest_with_file(ip_file, dn_count, speed_limit, time_limit):
         return 1
 
 
-def run_speedtest(exec_name, cfcolo, dn_count, speed_limit, time_limit):
+def run_speedtest(exec_name, cfcolo, dn_count, speed_limit, time_limit, use_ipv6=False):
     """运行 CloudflareSpeedTest"""
     print(f"\n开始运行 CloudflareSpeedTest...")
     print(f"测试参数:")
     print(f"  - 机场码: {cfcolo} ({AIRPORT_CODES.get(cfcolo, {}).get('name', '未知')})")
+    print(f"  - IP协议: {'IPv6' if use_ipv6 else 'IPv4'}")
     print(f"  - 测试 IP 数量: {dn_count}")
     print(f"  - 下载速度阈值: {speed_limit} MB/s")
     print(f"  - 延迟阈值: {time_limit} ms")
     print("-" * 50)
     
-    # 构建命令
     if sys.platform == "win32":
         cmd = [exec_name]
     else:
         cmd = [f"./{exec_name}"]
+    
+    # 选择IP文件
+    ip_file = CLOUDFLARE_IPV6_FILE if use_ipv6 else CLOUDFLARE_IPV4_FILE
     
     cmd.extend([
         "-dn", dn_count,
         "-sl", speed_limit,
         "-tl", time_limit,
         "-cfcolo", cfcolo,
-        "-f", CLOUDFLARE_IP_FILE
+        "-f", ip_file
     ])
+    
+    # 添加IPv6标志
+    if use_ipv6:
+        cmd.append("-ipv6")
     
     try:
         result = subprocess.run(cmd, check=True)
@@ -928,7 +986,6 @@ def run_speedtest(exec_name, cfcolo, dn_count, speed_limit, time_limit):
 
 def main():
     """主函数"""
-    # 设置控制台编码（Windows 兼容）
     if sys.platform == "win32":
         try:
             import codecs
@@ -938,43 +995,38 @@ def main():
             pass
     
     print("=" * 70)
-    print(" Cloudflare SpeedTest 跨平台自动化脚本")
+    print(" Cloudflare SpeedTest 跨平台自动化脚本 (IPv4/IPv6)")
     print(" 支持 Windows / Linux / macOS (Darwin)")
     print(f" 内置 {len(AIRPORT_CODES)} 个全球数据中心机场码")
+    print(" ✨ 新增 IPv6 优选功能")
     print("=" * 70)
     
-    # 获取系统信息
     os_type, arch_type = get_system_info()
     print(f"\n[系统信息]")
     print(f"  操作系统: {os_type}")
     print(f"  架构类型: {arch_type}")
     print(f"  Python版本: {sys.version.split()[0]}")
     
-    # 加载本地机场码配置（如果存在）
     print(f"\n[配置加载]")
     load_local_airport_codes()
     
-    # 下载 CloudflareSpeedTest
     print(f"\n[程序准备]")
     exec_name = download_cloudflare_speedtest(os_type, arch_type)
     
-    # 下载 Cloudflare IP 列表
-    download_cloudflare_ips()
-    
-    # 获取用户输入
     print(f"\n[参数配置]")
     result = get_user_input()
     
-    # 检查是否是优选反代模式
-    if result == (None, None, None, None):
+    if result == (None, None, None, None, True) or result == (None, None, None, None, False):
         print("\n优选反代功能已完成，程序退出")
         return 0
     
-    cfcolo, dn_count, speed_limit, time_limit = result
+    cfcolo, dn_count, speed_limit, time_limit, use_ipv6 = result
     
-    # 运行测速
+    # 下载对应的IP列表
+    download_cloudflare_ips(use_ipv6)
+    
     print(f"\n[开始测速]")
-    return run_speedtest(exec_name, cfcolo, dn_count, speed_limit, time_limit)
+    return run_speedtest(exec_name, cfcolo, dn_count, speed_limit, time_limit, use_ipv6)
 
 
 if __name__ == "__main__":
@@ -983,4 +1035,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\n用户取消操作")
         sys.exit(0)
-
