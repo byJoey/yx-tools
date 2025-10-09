@@ -329,6 +329,10 @@ def download_cloudflare_speedtest(os_type, arch_type):
             # 检查是否有手动下载的文件
             if os.path.exists(exec_name):
                 print(f"找到手动下载的文件: {exec_name}")
+                # 手动下载的文件也需要赋予执行权限
+                if os_type != "win":
+                    os.chmod(exec_name, 0o755)
+                    print(f"已赋予执行权限: {exec_name}")
             else:
                 print("未找到 CloudflareSpeedTest 文件，程序无法继续")
                 sys.exit(1)
@@ -924,6 +928,15 @@ def run_speedtest(exec_name, cfcolo, dn_count, speed_limit, time_limit):
 
 def main():
     """主函数"""
+    # 设置控制台编码（Windows 兼容）
+    if sys.platform == "win32":
+        try:
+            import codecs
+            sys.stdout = codecs.getwriter('utf-8')(sys.stdout.detach())
+            sys.stderr = codecs.getwriter('utf-8')(sys.stderr.detach())
+        except:
+            pass
+    
     print("=" * 70)
     print(" Cloudflare SpeedTest 跨平台自动化脚本")
     print(" 支持 Windows / Linux / macOS (Darwin)")
