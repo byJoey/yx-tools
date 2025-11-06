@@ -140,15 +140,35 @@ def get_system_info() -> Tuple[str, str]:
     else:
         raise ValueError(f"不支持的操作系统: {os_type}")
 
-    arch_type = "amd64" if sys.maxsize > 2**32 else "386"
-    if os_type == 'mac':
+    # 修正架构识别逻辑
+    arch_type = "amd64"  # 默认值
+    if os_type == 'linux':
+        try:
+            # 调用uname -m获取真实架构（arm64设备输出aarch64，amd64输出x86_64）
+            uname_output = subprocess.run(
+                ["uname", "-m"], capture_output=True, text=True, check=True
+            ).stdout.strip()
+            if uname_output == "aarch64":
+                arch_type = "arm64"
+            elif uname_output == "x86_64":
+                arch_type = "amd64"
+            else:
+                # 其他架构（如386、mips等，根据实际需求处理）
+                arch_type = uname_output
+        except subprocess.CalledProcessError:
+            # 失败时 fallback 到原逻辑（仅区分32/64位）
+            arch_type = "amd64" if sys.maxsize > 2**32 else "386"
+    elif os_type == 'mac':
         try:
             uname_output = subprocess.run(
                 ["uname", "-m"], capture_output=True, text=True, check=True
             ).stdout.strip()
             arch_type = "arm64" if uname_output == "arm64" else "amd64"
         except subprocess.CalledProcessError:
-            pass  # 失败时使用默认值
+            arch_type = "amd64" if sys.maxsize > 2**32 else "386"
+    else:
+        # Windows默认逻辑（amd64/386）
+        arch_type = "amd64" if sys.maxsize > 2**32 else "386"
 
     return os_type, arch_type
 

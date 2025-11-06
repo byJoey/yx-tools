@@ -59,7 +59,7 @@ RUN pip install --no-cache-dir requests python-dotenv -i https://mirrors.cloud.t
 
 # 定时任务：日志输出到/data目录（已挂载，持久化）
 # 定时任务：显式设置PATH，确保python3可被找到
-RUN echo "* */12 * * * root export PATH=/usr/local/bin:/usr/bin:/bin; . /app/.env; python3 /app/auto_speedtest.py >> /app/data/speedtest.log 2>&1" > /etc/cron.d/speedtest-cron && \
+RUN echo "0 8 * * * root export PATH=/usr/local/bin:/usr/bin:/bin; . /app/.env; python3 /app/auto_speedtest.py >> /app/data/speedtest.log 2>&1" > /etc/cron.d/speedtest-cron && \
     echo "0 0 * * 0 root > /app/data/speedtest.log 2>&1" >> /etc/cron.d/speedtest-cron && \
     chmod 0644 /etc/cron.d/speedtest-cron
 
