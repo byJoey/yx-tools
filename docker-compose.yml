@@ -1,0 +1,9 @@
+services:
+  cloudflare-speedtest:
+    build: .
+    container_name: cloudflare-speedtest
+    restart: on-failure:3
+    # 移除 env_file 配置（不再需要注入环境变量）
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env
