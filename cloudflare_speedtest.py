@@ -222,7 +222,7 @@ AIRPORT_CODES = {
 }
 
 # 在线机场码列表URL（GitHub社区维护）
-AIRPORT_CODES_URL = "https://raw.githubusercontent.com/cloudflare/cf-ui/master/packages/colo-config/src/data.json"
+AIRPORT_CODES_URL = "https://wget.la/https://raw.githubusercontent.com/cloudflare/cf-ui/master/packages/colo-config/src/data.json"
 AIRPORT_CODES_FILE = "airport_codes.json"
 
 # Cloudflare IP列表URL和文件
@@ -575,7 +575,7 @@ def download_cloudflare_speedtest(os_type, arch_type):
         else:  # arm64
             archive_name = "CloudflareST_proxy_linux_arm64.tar.gz"
     
-    download_url = f"https://github.com/byJoey/CloudflareSpeedTest/releases/download/v1.0/{archive_name}"
+    download_url = f"https://wget.la/https://github.com/byJoey/CloudflareSpeedTest/releases/download/v1.0/{archive_name}"
     
     if not download_file(download_url, archive_name):
         # 备用方案: 尝试 HTTP 下载
