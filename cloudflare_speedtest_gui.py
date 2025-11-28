@@ -457,7 +457,7 @@ class CloudflareSpeedTestGUI:
                     ft.TextButton("Telegram", url="https://t.me/+ft-zI76oovgwNmRh",
                                  style=ft.ButtonStyle(padding=3)),
                     ft.Text("•", size=9, color=ft.Colors.GREY_400),
-                    ft.Text("Made with ❤️ by Joey", size=10, color=ft.Colors.GREY_500),
+                    ft.Text("Made with ❤️ by Joey & Zag", size=10, color=ft.Colors.GREY_500),
                 ],
                 alignment=ft.MainAxisAlignment.CENTER,
                 spacing=6,
