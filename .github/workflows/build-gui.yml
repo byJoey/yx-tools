@@ -19,26 +19,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev ninja-build libfuse2 rpm clang cmake pkg-config
-          pip install flet
+          sudo apt-get install -y libfuse2 rpm
+          pip install flet pyinstaller pillow
           pip install -r requirements-gui.txt
-      - name: Prepare assets
+      - name: Build with Flet Pack
         run: |
-          mkdir -p assets
-          cp icon/icon.png assets/icon.png
-      - name: Build with Flet
-        run: |
-          flet build linux --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}" -v
-          ls -la build/linux/ || true
-          find build -name "yx-tools-gui*" -type f || true
+          flet pack cloudflare_speedtest_gui.py --name yx-tools-gui --icon icon/icon.png --add-data "cloudflare_speedtest.py:." --add-data "icon:icon"
       - name: Create desktop file
         run: |
           cat > yx-tools-gui.desktop << 'DESKTOP_EOF'
@@ -52,23 +41,15 @@ jobs:
           Categories=Network;
           DESKTOP_EOF
           sed -i 's/^          //' yx-tools-gui.desktop
-      - name: Find and package executable
+      - name: Create packages
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
-          # 查找可执行文件
-          EXEC_PATH=$(find build -name "yx-tools-gui" -type f -executable | head -1)
-          if [ -z "$EXEC_PATH" ]; then
-            echo "Error: Executable not found"
-            find build -type f
-            exit 1
-          fi
-          echo "Found executable: $EXEC_PATH"
           
           # AppImage
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
           mkdir -p AppDir/usr/{bin,share/{applications,icons/hicolor/256x256/apps}}
-          cp "$EXEC_PATH" AppDir/usr/bin/yx-tools-gui
+          cp dist/yx-tools-gui AppDir/usr/bin/
           cp icon/icon.png AppDir/yx-tools-gui.png
           cp icon/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           cp yx-tools-gui.desktop AppDir/
@@ -81,7 +62,7 @@ jobs:
           
           # DEB
           mkdir -p deb-pkg/{DEBIAN,opt/yx-tools-gui,usr/{bin,share/{applications,icons/hicolor/256x256/apps}}}
-          cp "$EXEC_PATH" deb-pkg/opt/yx-tools-gui/yx-tools-gui
+          cp dist/yx-tools-gui deb-pkg/opt/yx-tools-gui/
           cp icon/icon.png deb-pkg/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           echo '#!/bin/bash' > deb-pkg/usr/bin/yx-tools-gui
           echo 'exec /opt/yx-tools-gui/yx-tools-gui "$@"' >> deb-pkg/usr/bin/yx-tools-gui
@@ -96,7 +77,7 @@ jobs:
           
           # RPM
           mkdir -p rpmbuild/{BUILD,RPMS,SPECS,SOURCES}
-          cp "$EXEC_PATH" rpmbuild/SOURCES/yx-tools-gui
+          cp dist/yx-tools-gui rpmbuild/SOURCES/
           cp icon/icon.png rpmbuild/SOURCES/
           sed 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' yx-tools-gui.desktop > rpmbuild/SOURCES/yx-tools-gui.desktop
           cat > rpmbuild/SPECS/yx-tools-gui.spec << SPEC_EOF
@@ -141,24 +122,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev ninja-build libfuse2 rpm clang cmake pkg-config
-          pip install flet
+          sudo apt-get install -y libfuse2 rpm
+          pip install flet pyinstaller pillow
           pip install -r requirements-gui.txt
-      - name: Prepare assets
+      - name: Build with Flet Pack
         run: |
-          mkdir -p assets
-          cp icon/icon.png assets/icon.png
-      - name: Build with Flet
-        run: |
-          flet build linux --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}" -v
+          flet pack cloudflare_speedtest_gui.py --name yx-tools-gui --icon icon/icon.png --add-data "cloudflare_speedtest.py:." --add-data "icon:icon"
       - name: Create desktop file
         run: |
           cat > yx-tools-gui.desktop << 'DESKTOP_EOF'
@@ -172,29 +144,27 @@ jobs:
           Categories=Network;
           DESKTOP_EOF
           sed -i 's/^          //' yx-tools-gui.desktop
-      - name: Find and package executable
+      - name: Create packages
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
-          EXEC_PATH=$(find build -name "yx-tools-gui" -type f -executable | head -1)
-          if [ -z "$EXEC_PATH" ]; then
-            echo "Error: Executable not found"
-            find build -type f
-            exit 1
-          fi
           
-          # AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage -O linuxdeploy
-          chmod +x linuxdeploy
-          ./linuxdeploy --appimage-extract
-          mkdir -p AppDir/usr/bin
-          cp "$EXEC_PATH" AppDir/usr/bin/yx-tools-gui
-          cp icon/icon.png yx-tools-gui.png
-          ./squashfs-root/AppRun --appdir AppDir -e "$EXEC_PATH" -i yx-tools-gui.png -d yx-tools-gui.desktop --output appimage || echo "AppImage build skipped"
-          mv *.AppImage yx-tools-gui-aarch64.AppImage 2>/dev/null || touch yx-tools-gui-aarch64.AppImage.skip
+          # AppImage (may fail on arm64)
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage -O linuxdeploy || true
+          if [ -f linuxdeploy ]; then
+            chmod +x linuxdeploy
+            ./linuxdeploy --appimage-extract || true
+            mkdir -p AppDir/usr/bin
+            cp dist/yx-tools-gui AppDir/usr/bin/
+            cp icon/icon.png yx-tools-gui.png
+            ./squashfs-root/AppRun --appdir AppDir -e dist/yx-tools-gui -i yx-tools-gui.png -d yx-tools-gui.desktop --output appimage || true
+            mv *.AppImage yx-tools-gui-aarch64.AppImage 2>/dev/null || touch yx-tools-gui-aarch64.AppImage.skip
+          else
+            touch yx-tools-gui-aarch64.AppImage.skip
+          fi
           
           # DEB
           mkdir -p deb-pkg/{DEBIAN,opt/yx-tools-gui,usr/{bin,share/{applications,icons/hicolor/256x256/apps}}}
-          cp "$EXEC_PATH" deb-pkg/opt/yx-tools-gui/yx-tools-gui
+          cp dist/yx-tools-gui deb-pkg/opt/yx-tools-gui/
           cp icon/icon.png deb-pkg/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           echo '#!/bin/bash' > deb-pkg/usr/bin/yx-tools-gui
           echo 'exec /opt/yx-tools-gui/yx-tools-gui "$@"' >> deb-pkg/usr/bin/yx-tools-gui
@@ -209,7 +179,7 @@ jobs:
           
           # RPM
           mkdir -p rpmbuild/{BUILD,RPMS,SPECS,SOURCES}
-          cp "$EXEC_PATH" rpmbuild/SOURCES/yx-tools-gui
+          cp dist/yx-tools-gui rpmbuild/SOURCES/
           cp icon/icon.png rpmbuild/SOURCES/
           sed 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' yx-tools-gui.desktop > rpmbuild/SOURCES/yx-tools-gui.desktop
           cat > rpmbuild/SPECS/yx-tools-gui.spec << SPEC_EOF
@@ -254,31 +224,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
       - name: Install dependencies
         run: |
-          pip install flet
+          pip install flet pyinstaller pillow
           pip install -r requirements-gui.txt
-      - name: Prepare assets
+      - name: Build with Flet Pack
         run: |
-          mkdir -p assets
-          copy icon\icon.png assets\icon.png
-        shell: cmd
-      - name: Build with Flet
-        run: flet build windows --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}" -v
-      - name: Find and rename executable
+          flet pack cloudflare_speedtest_gui.py --name yx-tools-gui --icon icon/icon.png --add-data "cloudflare_speedtest.py;." --add-data "icon;icon"
+      - name: Package
         run: |
-          $exe = Get-ChildItem -Path build -Recurse -Filter "yx-tools-gui.exe" | Select-Object -First 1
-          if ($exe) {
-            Copy-Item $exe.FullName -Destination "yx-tools-gui-x64.exe"
-          } else {
-            Get-ChildItem -Path build -Recurse
-            throw "Executable not found"
-          }
+          Copy-Item "dist/yx-tools-gui.exe" -Destination "yx-tools-gui-x64.exe"
         shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
@@ -293,31 +248,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
       - name: Install dependencies
         run: |
-          pip install flet
+          pip install flet pyinstaller pillow
           pip install -r requirements-gui.txt
-      - name: Prepare assets
+      - name: Build with Flet Pack
         run: |
-          mkdir -p assets
-          copy icon\icon.png assets\icon.png
-        shell: cmd
-      - name: Build with Flet
-        run: flet build windows --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}" -v
-      - name: Find and rename executable
+          flet pack cloudflare_speedtest_gui.py --name yx-tools-gui --icon icon/icon.png --add-data "cloudflare_speedtest.py;." --add-data "icon;icon"
+      - name: Package
         run: |
-          $exe = Get-ChildItem -Path build -Recurse -Filter "yx-tools-gui.exe" | Select-Object -First 1
-          if ($exe) {
-            Copy-Item $exe.FullName -Destination "yx-tools-gui-arm64.exe"
-          } else {
-            Get-ChildItem -Path build -Recurse
-            throw "Executable not found"
-          }
+          Copy-Item "dist/yx-tools-gui.exe" -Destination "yx-tools-gui-arm64.exe"
         shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
