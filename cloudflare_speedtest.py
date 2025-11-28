@@ -737,6 +737,19 @@ def download_cloudflare_speedtest(os_type, arch_type):
     return proxy_exec_path
 
 
+def get_exec_cmd(exec_name):
+    """
+    获取可执行文件的命令路径
+    如果是绝对路径直接返回，否则在 Unix 系统上添加 ./ 前缀
+    """
+    if os.path.isabs(exec_name):
+        return exec_name
+    elif sys.platform == "win32":
+        return exec_name
+    else:
+        return f"./{exec_name}"
+
+
 def select_ip_version():
     """选择IP版本（IPv4或IPv6）"""
     print("\n" + "=" * 60)
@@ -1532,10 +1545,7 @@ def handle_beginner_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4", selected
             print(f"\n🔍 正在测试端口 {port}...")
             
             # 构建测速命令
-            if sys.platform == "win32":
-                cmd = [exec_name]
-            else:
-                cmd = [f"./{exec_name}"]
+            cmd = [get_exec_cmd(exec_name)]
             
             temp_result_file = f"result_port_{port}.csv"
             cmd.extend([
@@ -1581,10 +1591,7 @@ def handle_beginner_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4", selected
     else:
         # 单个端口或非 CIDR 格式
         # 构建测速命令
-        if sys.platform == "win32":
-            cmd = [exec_name]
-        else:
-            cmd = [f"./{exec_name}"]
+        cmd = [get_exec_cmd(exec_name)]
         
         cmd.extend([
             "-f", actual_ip_file,
@@ -1844,10 +1851,7 @@ def handle_normal_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4", selected_p
                 for port in tp_ports:
                     print(f"\n🔍 正在测试端口 {port}...")
                     
-                    if sys.platform == "win32":
-                        cmd = [exec_name]
-                    else:
-                        cmd = [f"./{exec_name}"]
+                    cmd = [get_exec_cmd(exec_name)]
                     
                     temp_result_file = f"result_port_{port}.csv"
                     cmd.extend([
@@ -1892,10 +1896,7 @@ def handle_normal_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4", selected_p
                     upload_info = None
             else:
                 # 单个端口或非 CIDR 格式
-                if sys.platform == "win32":
-                    cmd = [exec_name]
-                else:
-                    cmd = [f"./{exec_name}"]
+                cmd = [get_exec_cmd(exec_name)]
                 
                 cmd.extend([
                     "-f", actual_ip_file,
@@ -2046,7 +2047,7 @@ def run_speedtest_with_file(ip_file, dn_count, speed_limit, time_limit, thread_c
         
         # 构建命令（反代模式使用TCPing，专注于端口信息）
         cmd = [
-            f"./{exec_name}",
+            get_exec_cmd(exec_name),
             "-f", ip_file,
             "-n", thread_count,
             "-dn", dn_count,
@@ -2090,10 +2091,7 @@ def run_speedtest(exec_name, cfcolo, dn_count, speed_limit, time_limit, thread_c
     print("-" * 50)
     
     # 构建命令
-    if sys.platform == "win32":
-        cmd = [exec_name]
-    else:
-        cmd = [f"./{exec_name}"]
+    cmd = [get_exec_cmd(exec_name)]
     
     cmd.extend([
         "-n", thread_count,
@@ -2259,10 +2257,7 @@ def run_with_args(args):
             return 1
         
         # 构建测速命令
-        if sys.platform == "win32":
-            cmd = [exec_name]
-        else:
-            cmd = [f"./{exec_name}"]
+        cmd = [get_exec_cmd(exec_name)]
         
         cmd.extend([
             "-f", ip_file,
@@ -2347,10 +2342,7 @@ def run_with_args(args):
         print(f"找到 {len(region_ips)} 个 {args.region} 地区的IP，开始测速...")
         
         # 构建测速命令
-        if sys.platform == "win32":
-            cmd = [exec_name]
-        else:
-            cmd = [f"./{exec_name}"]
+        cmd = [get_exec_cmd(exec_name)]
         
         cmd.extend([
             "-f", region_ip_file,
@@ -4618,10 +4610,7 @@ def detect_available_regions():
     exec_name = download_cloudflare_speedtest(os_type, arch_type)
     
     # 构建检测命令 - 使用HTTPing模式快速检测
-    if sys.platform == "win32":
-        cmd = [exec_name]
-    else:
-        cmd = [f"./{exec_name}"]
+    cmd = [get_exec_cmd(exec_name)]
     
     cmd.extend([
         "-dd",  # 禁用下载测速，只做延迟测试

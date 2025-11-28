@@ -28,6 +28,7 @@ try:
         load_config,
         save_config,
         generate_ipv6_file,
+        get_exec_cmd,
     )
 except ImportError:
     print("错误: 请确保 cloudflare_speedtest.py 在同一目录下")
@@ -1115,10 +1116,7 @@ class CloudflareSpeedTestGUI:
             self.page.update()
             
             # 构建命令
-            if sys.platform == "win32":
-                cmd = [exec_name]
-            else:
-                cmd = [f"./{exec_name}"]
+            cmd = [get_exec_cmd(exec_name)]
             
             cmd.extend([
                 "-f", actual_ip_file,
