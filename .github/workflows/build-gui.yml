@@ -146,6 +146,7 @@ jobs:
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage -O appimagetool
           chmod +x appimagetool
+          ./appimagetool --appimage-extract
           mkdir -p AppDir/usr/{bin,share/{applications,icons/hicolor/256x256/apps}}
           cp dist/yx-tools-gui AppDir/usr/bin/
           cp icon/icon.png AppDir/yx-tools-gui.png
@@ -166,7 +167,7 @@ jobs:
           echo 'HERE=$(dirname "$(readlink -f "$0")")' >> AppDir/AppRun
           echo 'exec "${HERE}/usr/bin/yx-tools-gui" "$@"' >> AppDir/AppRun
           chmod +x AppDir/AppRun
-          ARCH=aarch64 ./appimagetool AppDir yx-tools-gui-aarch64.AppImage
+          ARCH=aarch64 ./squashfs-root/AppRun AppDir yx-tools-gui-aarch64.AppImage
           mkdir -p deb-pkg/{DEBIAN,opt/yx-tools-gui,usr/{bin,share/{applications,icons/hicolor/256x256/apps}}}
           cp dist/yx-tools-gui deb-pkg/opt/yx-tools-gui/
           cp icon/icon.png deb-pkg/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
