@@ -27,11 +27,18 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev ninja-build libfuse2 rpm clang cmake
+          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev ninja-build libfuse2 rpm clang cmake pkg-config
           pip install flet
           pip install -r requirements-gui.txt
+      - name: Prepare assets
+        run: |
+          mkdir -p assets
+          cp icon/icon.png assets/icon.png
       - name: Build with Flet
-        run: flet build linux --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
+        run: |
+          flet build linux --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}" -v
+          ls -la build/linux/ || true
+          find build -name "yx-tools-gui*" -type f || true
       - name: Create desktop file
         run: |
           cat > yx-tools-gui.desktop << 'DESKTOP_EOF'
@@ -45,12 +52,23 @@ jobs:
           Categories=Network;
           DESKTOP_EOF
           sed -i 's/^          //' yx-tools-gui.desktop
-      - name: Create AppImage
+      - name: Find and package executable
         run: |
+          VERSION=${{ github.event.inputs.version || '1.0.0' }}
+          # 查找可执行文件
+          EXEC_PATH=$(find build -name "yx-tools-gui" -type f -executable | head -1)
+          if [ -z "$EXEC_PATH" ]; then
+            echo "Error: Executable not found"
+            find build -type f
+            exit 1
+          fi
+          echo "Found executable: $EXEC_PATH"
+          
+          # AppImage
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
           mkdir -p AppDir/usr/{bin,share/{applications,icons/hicolor/256x256/apps}}
-          cp build/linux/yx-tools-gui AppDir/usr/bin/
+          cp "$EXEC_PATH" AppDir/usr/bin/yx-tools-gui
           cp icon/icon.png AppDir/yx-tools-gui.png
           cp icon/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           cp yx-tools-gui.desktop AppDir/
@@ -60,11 +78,10 @@ jobs:
           echo 'exec "${HERE}/usr/bin/yx-tools-gui" "$@"' >> AppDir/AppRun
           chmod +x AppDir/AppRun
           ARCH=x86_64 ./appimagetool AppDir yx-tools-gui-x86_64.AppImage
-      - name: Create DEB
-        run: |
-          VERSION=${{ github.event.inputs.version || '1.0.0' }}
+          
+          # DEB
           mkdir -p deb-pkg/{DEBIAN,opt/yx-tools-gui,usr/{bin,share/{applications,icons/hicolor/256x256/apps}}}
-          cp build/linux/yx-tools-gui deb-pkg/opt/yx-tools-gui/
+          cp "$EXEC_PATH" deb-pkg/opt/yx-tools-gui/yx-tools-gui
           cp icon/icon.png deb-pkg/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           echo '#!/bin/bash' > deb-pkg/usr/bin/yx-tools-gui
           echo 'exec /opt/yx-tools-gui/yx-tools-gui "$@"' >> deb-pkg/usr/bin/yx-tools-gui
@@ -76,13 +93,15 @@ jobs:
           echo "Maintainer: Joey and Zag" >> deb-pkg/DEBIAN/control
           echo "Description: Cloudflare IP Speed Test Tool" >> deb-pkg/DEBIAN/control
           dpkg-deb --build deb-pkg yx-tools-gui_${VERSION}_amd64.deb
-      - name: Create RPM
-        run: |
-          VERSION=${{ github.event.inputs.version || '1.0.0' }}
-          mkdir -p rpmbuild/{BUILD,RPMS,SPECS}
-          cat > rpmbuild/SPECS/yx-tools-gui.spec << 'SPEC_EOF'
+          
+          # RPM
+          mkdir -p rpmbuild/{BUILD,RPMS,SPECS,SOURCES}
+          cp "$EXEC_PATH" rpmbuild/SOURCES/yx-tools-gui
+          cp icon/icon.png rpmbuild/SOURCES/
+          sed 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' yx-tools-gui.desktop > rpmbuild/SOURCES/yx-tools-gui.desktop
+          cat > rpmbuild/SPECS/yx-tools-gui.spec << SPEC_EOF
           Name: yx-tools-gui
-          Version: VERSION_PLACEHOLDER
+          Version: ${VERSION}
           Release: 1
           Summary: Cloudflare IP Speed Test Tool
           License: MIT
@@ -94,7 +113,7 @@ jobs:
           chmod +x %{buildroot}/opt/yx-tools-gui/yx-tools-gui
           cp %{_sourcedir}/icon.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           echo '#!/bin/bash' > %{buildroot}/usr/bin/yx-tools-gui
-          echo 'exec /opt/yx-tools-gui/yx-tools-gui "$@"' >> %{buildroot}/usr/bin/yx-tools-gui
+          echo 'exec /opt/yx-tools-gui/yx-tools-gui "\$@"' >> %{buildroot}/usr/bin/yx-tools-gui
           chmod +x %{buildroot}/usr/bin/yx-tools-gui
           cp %{_sourcedir}/yx-tools-gui.desktop %{buildroot}/usr/share/applications/
           %files
@@ -104,11 +123,6 @@ jobs:
           /usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           SPEC_EOF
           sed -i 's/^          //' rpmbuild/SPECS/yx-tools-gui.spec
-          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/" rpmbuild/SPECS/yx-tools-gui.spec
-          mkdir -p rpmbuild/SOURCES
-          cp build/linux/yx-tools-gui rpmbuild/SOURCES/
-          cp icon/icon.png rpmbuild/SOURCES/
-          sed 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' yx-tools-gui.desktop > rpmbuild/SOURCES/yx-tools-gui.desktop
           rpmbuild --define "_topdir ${GITHUB_WORKSPACE}/rpmbuild" -bb rpmbuild/SPECS/yx-tools-gui.spec
           cp rpmbuild/RPMS/x86_64/*.rpm yx-tools-gui-${VERSION}.x86_64.rpm
       - uses: actions/upload-artifact@v4
@@ -135,11 +149,16 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev ninja-build libfuse2 rpm clang cmake
+          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev ninja-build libfuse2 rpm clang cmake pkg-config
           pip install flet
           pip install -r requirements-gui.txt
+      - name: Prepare assets
+        run: |
+          mkdir -p assets
+          cp icon/icon.png assets/icon.png
       - name: Build with Flet
-        run: flet build linux --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
+        run: |
+          flet build linux --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}" -v
       - name: Create desktop file
         run: |
           cat > yx-tools-gui.desktop << 'DESKTOP_EOF'
@@ -153,21 +172,29 @@ jobs:
           Categories=Network;
           DESKTOP_EOF
           sed -i 's/^          //' yx-tools-gui.desktop
-      - name: Create AppImage
+      - name: Find and package executable
         run: |
+          VERSION=${{ github.event.inputs.version || '1.0.0' }}
+          EXEC_PATH=$(find build -name "yx-tools-gui" -type f -executable | head -1)
+          if [ -z "$EXEC_PATH" ]; then
+            echo "Error: Executable not found"
+            find build -type f
+            exit 1
+          fi
+          
+          # AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage -O linuxdeploy
           chmod +x linuxdeploy
           ./linuxdeploy --appimage-extract
           mkdir -p AppDir/usr/bin
-          cp build/linux/yx-tools-gui AppDir/usr/bin/
+          cp "$EXEC_PATH" AppDir/usr/bin/yx-tools-gui
           cp icon/icon.png yx-tools-gui.png
-          ./squashfs-root/AppRun --appdir AppDir -e build/linux/yx-tools-gui -i yx-tools-gui.png -d yx-tools-gui.desktop --output appimage || echo "AppImage build skipped"
+          ./squashfs-root/AppRun --appdir AppDir -e "$EXEC_PATH" -i yx-tools-gui.png -d yx-tools-gui.desktop --output appimage || echo "AppImage build skipped"
           mv *.AppImage yx-tools-gui-aarch64.AppImage 2>/dev/null || touch yx-tools-gui-aarch64.AppImage.skip
-      - name: Create DEB
-        run: |
-          VERSION=${{ github.event.inputs.version || '1.0.0' }}
+          
+          # DEB
           mkdir -p deb-pkg/{DEBIAN,opt/yx-tools-gui,usr/{bin,share/{applications,icons/hicolor/256x256/apps}}}
-          cp build/linux/yx-tools-gui deb-pkg/opt/yx-tools-gui/
+          cp "$EXEC_PATH" deb-pkg/opt/yx-tools-gui/yx-tools-gui
           cp icon/icon.png deb-pkg/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           echo '#!/bin/bash' > deb-pkg/usr/bin/yx-tools-gui
           echo 'exec /opt/yx-tools-gui/yx-tools-gui "$@"' >> deb-pkg/usr/bin/yx-tools-gui
@@ -179,13 +206,15 @@ jobs:
           echo "Maintainer: Joey and Zag" >> deb-pkg/DEBIAN/control
           echo "Description: Cloudflare IP Speed Test Tool" >> deb-pkg/DEBIAN/control
           dpkg-deb --build deb-pkg yx-tools-gui_${VERSION}_arm64.deb
-      - name: Create RPM
-        run: |
-          VERSION=${{ github.event.inputs.version || '1.0.0' }}
+          
+          # RPM
           mkdir -p rpmbuild/{BUILD,RPMS,SPECS,SOURCES}
-          cat > rpmbuild/SPECS/yx-tools-gui.spec << 'SPEC_EOF'
+          cp "$EXEC_PATH" rpmbuild/SOURCES/yx-tools-gui
+          cp icon/icon.png rpmbuild/SOURCES/
+          sed 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' yx-tools-gui.desktop > rpmbuild/SOURCES/yx-tools-gui.desktop
+          cat > rpmbuild/SPECS/yx-tools-gui.spec << SPEC_EOF
           Name: yx-tools-gui
-          Version: VERSION_PLACEHOLDER
+          Version: ${VERSION}
           Release: 1
           Summary: Cloudflare IP Speed Test Tool
           License: MIT
@@ -197,7 +226,7 @@ jobs:
           chmod +x %{buildroot}/opt/yx-tools-gui/yx-tools-gui
           cp %{_sourcedir}/icon.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           echo '#!/bin/bash' > %{buildroot}/usr/bin/yx-tools-gui
-          echo 'exec /opt/yx-tools-gui/yx-tools-gui "$@"' >> %{buildroot}/usr/bin/yx-tools-gui
+          echo 'exec /opt/yx-tools-gui/yx-tools-gui "\$@"' >> %{buildroot}/usr/bin/yx-tools-gui
           chmod +x %{buildroot}/usr/bin/yx-tools-gui
           cp %{_sourcedir}/yx-tools-gui.desktop %{buildroot}/usr/share/applications/
           %files
@@ -207,10 +236,6 @@ jobs:
           /usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           SPEC_EOF
           sed -i 's/^          //' rpmbuild/SPECS/yx-tools-gui.spec
-          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/" rpmbuild/SPECS/yx-tools-gui.spec
-          cp build/linux/yx-tools-gui rpmbuild/SOURCES/
-          cp icon/icon.png rpmbuild/SOURCES/
-          sed 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' yx-tools-gui.desktop > rpmbuild/SOURCES/yx-tools-gui.desktop
           rpmbuild --define "_topdir ${GITHUB_WORKSPACE}/rpmbuild" -bb rpmbuild/SPECS/yx-tools-gui.spec
           cp rpmbuild/RPMS/aarch64/*.rpm yx-tools-gui-${VERSION}.aarch64.rpm
       - uses: actions/upload-artifact@v4
@@ -238,14 +263,27 @@ jobs:
         run: |
           pip install flet
           pip install -r requirements-gui.txt
+      - name: Prepare assets
+        run: |
+          mkdir -p assets
+          copy icon\icon.png assets\icon.png
+        shell: cmd
       - name: Build with Flet
-        run: flet build windows --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
-      - name: Package
-        run: Rename-Item -Path "build/windows/yx-tools-gui.exe" -NewName "yx-tools-gui-x64.exe"
+        run: flet build windows --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}" -v
+      - name: Find and rename executable
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter "yx-tools-gui.exe" | Select-Object -First 1
+          if ($exe) {
+            Copy-Item $exe.FullName -Destination "yx-tools-gui-x64.exe"
+          } else {
+            Get-ChildItem -Path build -Recurse
+            throw "Executable not found"
+          }
+        shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
           name: exe-x64
-          path: build/windows/yx-tools-gui-x64.exe
+          path: yx-tools-gui-x64.exe
           compression-level: 0
 
   build-windows-arm64:
@@ -264,14 +302,27 @@ jobs:
         run: |
           pip install flet
           pip install -r requirements-gui.txt
+      - name: Prepare assets
+        run: |
+          mkdir -p assets
+          copy icon\icon.png assets\icon.png
+        shell: cmd
       - name: Build with Flet
-        run: flet build windows --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
-      - name: Package
-        run: Rename-Item -Path "build/windows/yx-tools-gui.exe" -NewName "yx-tools-gui-arm64.exe"
+        run: flet build windows --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}" -v
+      - name: Find and rename executable
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter "yx-tools-gui.exe" | Select-Object -First 1
+          if ($exe) {
+            Copy-Item $exe.FullName -Destination "yx-tools-gui-arm64.exe"
+          } else {
+            Get-ChildItem -Path build -Recurse
+            throw "Executable not found"
+          }
+        shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
           name: exe-arm64
-          path: build/windows/yx-tools-gui-arm64.exe
+          path: yx-tools-gui-arm64.exe
           compression-level: 0
 
   build-macos-intel:
@@ -290,13 +341,24 @@ jobs:
         run: |
           pip install flet
           pip install -r requirements-gui.txt
+      - name: Prepare assets
+        run: |
+          mkdir -p assets
+          cp icon/icon.png assets/icon.png
       - name: Build with Flet
-        run: flet build macos --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
+        run: flet build macos --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}" -v
       - name: Create DMG
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
+          APP_PATH=$(find build -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: App bundle not found"
+            find build -type d
+            exit 1
+          fi
+          echo "Found app: $APP_PATH"
           brew install create-dmg
-          create-dmg --volname "yx-tools-gui" --window-size 600 400 --icon-size 100 --icon "yx-tools-gui.app" 150 185 --app-drop-link 450 185 "yx-tools-gui-${VERSION}-intel.dmg" "build/macos/yx-tools-gui.app" || hdiutil create -volname "yx-tools-gui" -srcfolder build/macos/yx-tools-gui.app -ov -format UDZO "yx-tools-gui-${VERSION}-intel.dmg"
+          create-dmg --volname "yx-tools-gui" --window-size 600 400 --icon-size 100 --icon "$(basename $APP_PATH)" 150 185 --app-drop-link 450 185 "yx-tools-gui-${VERSION}-intel.dmg" "$APP_PATH" || hdiutil create -volname "yx-tools-gui" -srcfolder "$APP_PATH" -ov -format UDZO "yx-tools-gui-${VERSION}-intel.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: dmg-intel
@@ -319,13 +381,24 @@ jobs:
         run: |
           pip install flet
           pip install -r requirements-gui.txt
+      - name: Prepare assets
+        run: |
+          mkdir -p assets
+          cp icon/icon.png assets/icon.png
       - name: Build with Flet
-        run: flet build macos --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
+        run: flet build macos --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}" -v
       - name: Create DMG
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
+          APP_PATH=$(find build -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: App bundle not found"
+            find build -type d
+            exit 1
+          fi
+          echo "Found app: $APP_PATH"
           brew install create-dmg
-          create-dmg --volname "yx-tools-gui" --window-size 600 400 --icon-size 100 --icon "yx-tools-gui.app" 150 185 --app-drop-link 450 185 "yx-tools-gui-${VERSION}-apple-silicon.dmg" "build/macos/yx-tools-gui.app" || hdiutil create -volname "yx-tools-gui" -srcfolder build/macos/yx-tools-gui.app -ov -format UDZO "yx-tools-gui-${VERSION}-apple-silicon.dmg"
+          create-dmg --volname "yx-tools-gui" --window-size 600 400 --icon-size 100 --icon "$(basename $APP_PATH)" 150 185 --app-drop-link 450 185 "yx-tools-gui-${VERSION}-apple-silicon.dmg" "$APP_PATH" || hdiutil create -volname "yx-tools-gui" -srcfolder "$APP_PATH" -ov -format UDZO "yx-tools-gui-${VERSION}-apple-silicon.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: dmg-apple-silicon
