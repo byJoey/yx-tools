@@ -16,23 +16,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libfuse2 rpm
-          pip install flet pyinstaller pillow
+          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev ninja-build libfuse2 rpm clang cmake
+          pip install flet
           pip install -r requirements-gui.txt
-      
       - name: Build with Flet
         run: |
-          flet pack -n yx-tools-gui -i icon/icon.png --add-data "cloudflare_speedtest.py:." --product-name "yx-tools-gui" cloudflare_speedtest_gui.py
-      
+          flet build linux --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
       - name: Create packages
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
@@ -41,20 +41,19 @@ jobs:
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
           mkdir -p AppDir/usr/{bin,share/{applications,icons/hicolor/256x256/apps}}
-          cp dist/yx-tools-gui AppDir/usr/bin/
+          cp build/linux/yx-tools-gui AppDir/usr/bin/
           cp icon/icon.png AppDir/yx-tools-gui.png
           cp icon/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           cat > AppDir/yx-tools-gui.desktop << 'EOF'
-          [Desktop Entry]
-          Name=yx-tools-gui
-          Comment=Cloudflare IP Speed Test Tool
-          Exec=yx-tools-gui
-          Icon=yx-tools-gui
-          Terminal=false
-          Type=Application
-          Categories=Network;
-          StartupWMClass=flet
-          EOF
+[Desktop Entry]
+Name=yx-tools-gui
+Comment=Cloudflare IP Speed Test Tool
+Exec=yx-tools-gui
+Icon=yx-tools-gui
+Terminal=false
+Type=Application
+Categories=Network;
+EOF
           cp AppDir/yx-tools-gui.desktop AppDir/usr/share/applications/
           echo '#!/bin/bash' > AppDir/AppRun
           echo 'HERE=$(dirname "$(readlink -f "$0")")' >> AppDir/AppRun
@@ -64,66 +63,56 @@ jobs:
           
           # DEB
           mkdir -p deb-pkg/{DEBIAN,opt/yx-tools-gui,usr/{bin,share/{applications,icons/hicolor/256x256/apps}}}
-          cp dist/yx-tools-gui deb-pkg/opt/yx-tools-gui/
+          cp build/linux/yx-tools-gui deb-pkg/opt/yx-tools-gui/
           cp icon/icon.png deb-pkg/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           echo '#!/bin/bash' > deb-pkg/usr/bin/yx-tools-gui
           echo 'exec /opt/yx-tools-gui/yx-tools-gui "$@"' >> deb-pkg/usr/bin/yx-tools-gui
           chmod +x deb-pkg/usr/bin/yx-tools-gui
           sed 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' AppDir/yx-tools-gui.desktop > deb-pkg/usr/share/applications/yx-tools-gui.desktop
           cat > deb-pkg/DEBIAN/control << EOF
-          Package: yx-tools-gui
-          Version: ${VERSION}
-          Architecture: amd64
-          Maintainer: Joey and Zag
-          Description: Cloudflare IP Speed Test Tool
-          EOF
+Package: yx-tools-gui
+Version: ${VERSION}
+Architecture: amd64
+Maintainer: Joey and Zag
+Description: Cloudflare IP Speed Test Tool
+EOF
           dpkg-deb --build deb-pkg yx-tools-gui_${VERSION}_amd64.deb
           
           # RPM
           mkdir -p rpmbuild/{BUILD,RPMS,SPECS}
           cat > rpmbuild/SPECS/yx-tools-gui.spec << EOF
-          Name: yx-tools-gui
-          Version: ${VERSION}
-          Release: 1
-          Summary: Cloudflare IP Speed Test Tool
-          License: MIT
-          %description
-          Cloudflare IP Speed Test Tool
-          %install
-          mkdir -p %{buildroot}/opt/yx-tools-gui %{buildroot}/usr/bin %{buildroot}/usr/share/applications %{buildroot}/usr/share/icons/hicolor/256x256/apps
-          cp ${GITHUB_WORKSPACE}/dist/yx-tools-gui %{buildroot}/opt/yx-tools-gui/
-          chmod +x %{buildroot}/opt/yx-tools-gui/yx-tools-gui
-          cp ${GITHUB_WORKSPACE}/icon/icon.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
-          echo '#!/bin/bash' > %{buildroot}/usr/bin/yx-tools-gui
-          echo 'exec /opt/yx-tools-gui/yx-tools-gui "\$@"' >> %{buildroot}/usr/bin/yx-tools-gui
-          chmod +x %{buildroot}/usr/bin/yx-tools-gui
-          cp ${GITHUB_WORKSPACE}/AppDir/usr/share/applications/yx-tools-gui.desktop %{buildroot}/usr/share/applications/
-          sed -i 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' %{buildroot}/usr/share/applications/yx-tools-gui.desktop
-          %files
-          /opt/yx-tools-gui/yx-tools-gui
-          /usr/bin/yx-tools-gui
-          /usr/share/applications/yx-tools-gui.desktop
-          /usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
-          EOF
+Name: yx-tools-gui
+Version: ${VERSION}
+Release: 1
+Summary: Cloudflare IP Speed Test Tool
+License: MIT
+%description
+Cloudflare IP Speed Test Tool
+%install
+mkdir -p %{buildroot}/opt/yx-tools-gui %{buildroot}/usr/bin %{buildroot}/usr/share/applications %{buildroot}/usr/share/icons/hicolor/256x256/apps
+cp ${GITHUB_WORKSPACE}/build/linux/yx-tools-gui %{buildroot}/opt/yx-tools-gui/
+chmod +x %{buildroot}/opt/yx-tools-gui/yx-tools-gui
+cp ${GITHUB_WORKSPACE}/icon/icon.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
+echo '#!/bin/bash' > %{buildroot}/usr/bin/yx-tools-gui
+echo 'exec /opt/yx-tools-gui/yx-tools-gui "\$@"' >> %{buildroot}/usr/bin/yx-tools-gui
+chmod +x %{buildroot}/usr/bin/yx-tools-gui
+cp ${GITHUB_WORKSPACE}/AppDir/usr/share/applications/yx-tools-gui.desktop %{buildroot}/usr/share/applications/
+sed -i 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' %{buildroot}/usr/share/applications/yx-tools-gui.desktop
+%files
+/opt/yx-tools-gui/yx-tools-gui
+/usr/bin/yx-tools-gui
+/usr/share/applications/yx-tools-gui.desktop
+/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
+EOF
           rpmbuild --define "_topdir ${GITHUB_WORKSPACE}/rpmbuild" -bb rpmbuild/SPECS/yx-tools-gui.spec
           cp rpmbuild/RPMS/x86_64/*.rpm yx-tools-gui-${VERSION}.x86_64.rpm
-      
       - uses: actions/upload-artifact@v4
         with:
-          name: rpm-x86_64
-          path: yx-tools-gui-*.x86_64.rpm
-          compression-level: 0
-      
-      - uses: actions/upload-artifact@v4
-        with:
-          name: deb-amd64
-          path: yx-tools-gui_*_amd64.deb
-          compression-level: 0
-      
-      - uses: actions/upload-artifact@v4
-        with:
-          name: appimage-x86_64
-          path: yx-tools-gui-x86_64.AppImage
+          name: linux-x64-packages
+          path: |
+            yx-tools-gui-*.x86_64.rpm
+            yx-tools-gui_*_amd64.deb
+            yx-tools-gui-x86_64.AppImage
           compression-level: 0
 
   build-linux-arm64:
@@ -133,96 +122,98 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libfuse2 rpm
-          pip install flet pyinstaller pillow
+          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev ninja-build libfuse2 rpm clang cmake
+          pip install flet
           pip install -r requirements-gui.txt
       - name: Build with Flet
-        run: flet pack -n yx-tools-gui -i icon/icon.png --add-data "cloudflare_speedtest.py:." --product-name "yx-tools-gui" cloudflare_speedtest_gui.py
+        run: |
+          flet build linux --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
       - name: Create packages
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
+          
           # 创建 desktop 文件
           cat > yx-tools-gui.desktop << 'EOF'
-          [Desktop Entry]
-          Name=yx-tools-gui
-          Comment=Cloudflare IP Speed Test Tool
-          Exec=yx-tools-gui
-          Icon=yx-tools-gui
-          Terminal=false
-          Type=Application
-          Categories=Network;
-          StartupWMClass=flet
-          EOF
+[Desktop Entry]
+Name=yx-tools-gui
+Comment=Cloudflare IP Speed Test Tool
+Exec=yx-tools-gui
+Icon=yx-tools-gui
+Terminal=false
+Type=Application
+Categories=Network;
+EOF
           
-          # AppImage - 使用 linuxdeploy 替代 appimagetool
+          # AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage -O linuxdeploy
           chmod +x linuxdeploy
           ./linuxdeploy --appimage-extract
           mkdir -p AppDir/usr/bin
-          cp dist/yx-tools-gui AppDir/usr/bin/
+          cp build/linux/yx-tools-gui AppDir/usr/bin/
           cp icon/icon.png yx-tools-gui.png
-          ./squashfs-root/AppRun --appdir AppDir -e dist/yx-tools-gui -i yx-tools-gui.png -d yx-tools-gui.desktop --output appimage || echo "AppImage build skipped"
+          ./squashfs-root/AppRun --appdir AppDir -e build/linux/yx-tools-gui -i yx-tools-gui.png -d yx-tools-gui.desktop --output appimage || echo "AppImage build skipped"
           mv *.AppImage yx-tools-gui-aarch64.AppImage 2>/dev/null || touch yx-tools-gui-aarch64.AppImage.skip
           
+          # DEB
           mkdir -p deb-pkg/{DEBIAN,opt/yx-tools-gui,usr/{bin,share/{applications,icons/hicolor/256x256/apps}}}
-          cp dist/yx-tools-gui deb-pkg/opt/yx-tools-gui/
+          cp build/linux/yx-tools-gui deb-pkg/opt/yx-tools-gui/
           cp icon/icon.png deb-pkg/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           echo '#!/bin/bash' > deb-pkg/usr/bin/yx-tools-gui
           echo 'exec /opt/yx-tools-gui/yx-tools-gui "$@"' >> deb-pkg/usr/bin/yx-tools-gui
           chmod +x deb-pkg/usr/bin/yx-tools-gui
           sed 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' yx-tools-gui.desktop > deb-pkg/usr/share/applications/yx-tools-gui.desktop
           cat > deb-pkg/DEBIAN/control << EOF
-          Package: yx-tools-gui
-          Version: ${VERSION}
-          Architecture: arm64
-          Maintainer: Joey and Zag
-          Description: Cloudflare IP Speed Test Tool
-          EOF
+Package: yx-tools-gui
+Version: ${VERSION}
+Architecture: arm64
+Maintainer: Joey and Zag
+Description: Cloudflare IP Speed Test Tool
+EOF
           dpkg-deb --build deb-pkg yx-tools-gui_${VERSION}_arm64.deb
+          
+          # RPM
           mkdir -p rpmbuild/{BUILD,RPMS,SPECS}
           cat > rpmbuild/SPECS/yx-tools-gui.spec << EOF
-          Name: yx-tools-gui
-          Version: ${VERSION}
-          Release: 1
-          Summary: Cloudflare IP Speed Test Tool
-          License: MIT
-          %description
-          Cloudflare IP Speed Test Tool
-          %install
-          mkdir -p %{buildroot}/opt/yx-tools-gui %{buildroot}/usr/bin %{buildroot}/usr/share/applications %{buildroot}/usr/share/icons/hicolor/256x256/apps
-          cp ${GITHUB_WORKSPACE}/dist/yx-tools-gui %{buildroot}/opt/yx-tools-gui/
-          chmod +x %{buildroot}/opt/yx-tools-gui/yx-tools-gui
-          cp ${GITHUB_WORKSPACE}/icon/icon.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
-          echo '#!/bin/bash' > %{buildroot}/usr/bin/yx-tools-gui
-          echo 'exec /opt/yx-tools-gui/yx-tools-gui "\$@"' >> %{buildroot}/usr/bin/yx-tools-gui
-          chmod +x %{buildroot}/usr/bin/yx-tools-gui
-          cp ${GITHUB_WORKSPACE}/yx-tools-gui.desktop %{buildroot}/usr/share/applications/
-          sed -i 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' %{buildroot}/usr/share/applications/yx-tools-gui.desktop
-          %files
-          /opt/yx-tools-gui/yx-tools-gui
-          /usr/bin/yx-tools-gui
-          /usr/share/applications/yx-tools-gui.desktop
-          /usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
-          EOF
+Name: yx-tools-gui
+Version: ${VERSION}
+Release: 1
+Summary: Cloudflare IP Speed Test Tool
+License: MIT
+%description
+Cloudflare IP Speed Test Tool
+%install
+mkdir -p %{buildroot}/opt/yx-tools-gui %{buildroot}/usr/bin %{buildroot}/usr/share/applications %{buildroot}/usr/share/icons/hicolor/256x256/apps
+cp ${GITHUB_WORKSPACE}/build/linux/yx-tools-gui %{buildroot}/opt/yx-tools-gui/
+chmod +x %{buildroot}/opt/yx-tools-gui/yx-tools-gui
+cp ${GITHUB_WORKSPACE}/icon/icon.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
+echo '#!/bin/bash' > %{buildroot}/usr/bin/yx-tools-gui
+echo 'exec /opt/yx-tools-gui/yx-tools-gui "\$@"' >> %{buildroot}/usr/bin/yx-tools-gui
+chmod +x %{buildroot}/usr/bin/yx-tools-gui
+cp ${GITHUB_WORKSPACE}/yx-tools-gui.desktop %{buildroot}/usr/share/applications/
+sed -i 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' %{buildroot}/usr/share/applications/yx-tools-gui.desktop
+%files
+/opt/yx-tools-gui/yx-tools-gui
+/usr/bin/yx-tools-gui
+/usr/share/applications/yx-tools-gui.desktop
+/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
+EOF
           rpmbuild --define "_topdir ${GITHUB_WORKSPACE}/rpmbuild" -bb rpmbuild/SPECS/yx-tools-gui.spec
           cp rpmbuild/RPMS/aarch64/*.rpm yx-tools-gui-${VERSION}.aarch64.rpm
       - uses: actions/upload-artifact@v4
         with:
-          name: rpm-aarch64
-          path: yx-tools-gui-*.aarch64.rpm
-          compression-level: 0
-      - uses: actions/upload-artifact@v4
-        with:
-          name: deb-arm64
-          path: yx-tools-gui_*_arm64.deb
-          compression-level: 0
-      - uses: actions/upload-artifact@v4
-        with:
-          name: appimage-aarch64
-          path: yx-tools-gui-aarch64.AppImage
+          name: linux-arm64-packages
+          path: |
+            yx-tools-gui-*.aarch64.rpm
+            yx-tools-gui_*_arm64.deb
+            yx-tools-gui-aarch64.AppImage*
           compression-level: 0
 
   build-windows-x64:
@@ -232,18 +223,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
       - name: Install dependencies
         run: |
-          pip install flet pyinstaller pillow
+          pip install flet
           pip install -r requirements-gui.txt
       - name: Build with Flet
         run: |
-          flet pack -n yx-tools-gui -i icon/icon.png --add-data "cloudflare_speedtest.py;." --product-name "yx-tools-gui" cloudflare_speedtest_gui.py
-          Rename-Item -Path "dist/yx-tools-gui.exe" -NewName "yx-tools-gui-x64.exe"
+          flet build windows --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
+      - name: Package
+        run: |
+          Rename-Item -Path "build/windows/yx-tools-gui.exe" -NewName "yx-tools-gui-x64.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: exe-x64
-          path: dist/yx-tools-gui-x64.exe
+          path: build/windows/yx-tools-gui-x64.exe
           compression-level: 0
 
   build-windows-arm64:
@@ -253,18 +251,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
       - name: Install dependencies
         run: |
-          pip install flet pyinstaller pillow
+          pip install flet
           pip install -r requirements-gui.txt
       - name: Build with Flet
         run: |
-          flet pack -n yx-tools-gui -i icon/icon.png --add-data "cloudflare_speedtest.py;." --product-name "yx-tools-gui" cloudflare_speedtest_gui.py
-          Rename-Item -Path "dist/yx-tools-gui.exe" -NewName "yx-tools-gui-arm64.exe"
+          flet build windows --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
+      - name: Package
+        run: |
+          Rename-Item -Path "build/windows/yx-tools-gui.exe" -NewName "yx-tools-gui-arm64.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: exe-arm64
-          path: dist/yx-tools-gui-arm64.exe
+          path: build/windows/yx-tools-gui-arm64.exe
           compression-level: 0
 
   build-macos-intel:
@@ -274,18 +279,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
-        run: |
-          pip install flet pyinstaller pillow
-          pip install -r requirements-gui.txt
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
+      - name: Install dependencies
+        run: |
+          pip install flet
+          pip install -r requirements-gui.txt
       - name: Build with Flet
         run: |
-          flet build macos --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "1.0.0"
+          flet build macos --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
       - name: Create DMG
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
@@ -304,18 +309,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
-        run: |
-          pip install flet pyinstaller pillow
-          pip install -r requirements-gui.txt
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
+      - name: Install dependencies
+        run: |
+          pip install flet
+          pip install -r requirements-gui.txt
       - name: Build with Flet
         run: |
-          flet build macos --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "1.0.0"
+          flet build macos --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "${{ github.event.inputs.version || '1.0.0' }}"
       - name: Create DMG
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
