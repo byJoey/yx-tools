@@ -353,11 +353,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true
-      - run: ls -la artifacts/
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -exec cp {} release/ \;
+          ls -la release/
       - uses: softprops/action-gh-release@v1
         with:
-          files: artifacts/*
+          files: release/*
           draft: false
           generate_release_notes: true
         env:
