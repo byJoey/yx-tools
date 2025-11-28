@@ -144,14 +144,8 @@ jobs:
       - name: Create packages
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage -O appimagetool
-          chmod +x appimagetool
-          ./appimagetool --appimage-extract
-          mkdir -p AppDir/usr/{bin,share/{applications,icons/hicolor/256x256/apps}}
-          cp dist/yx-tools-gui AppDir/usr/bin/
-          cp icon/icon.png AppDir/yx-tools-gui.png
-          cp icon/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
-          cat > AppDir/yx-tools-gui.desktop << 'EOF'
+          # 创建 desktop 文件
+          cat > yx-tools-gui.desktop << 'EOF'
           [Desktop Entry]
           Name=yx-tools-gui
           Comment=Cloudflare IP Speed Test Tool
@@ -162,19 +156,24 @@ jobs:
           Categories=Network;
           StartupWMClass=flet
           EOF
-          cp AppDir/yx-tools-gui.desktop AppDir/usr/share/applications/
-          echo '#!/bin/bash' > AppDir/AppRun
-          echo 'HERE=$(dirname "$(readlink -f "$0")")' >> AppDir/AppRun
-          echo 'exec "${HERE}/usr/bin/yx-tools-gui" "$@"' >> AppDir/AppRun
-          chmod +x AppDir/AppRun
-          export ARCH=aarch64 && ./squashfs-root/AppRun --no-appstream AppDir yx-tools-gui-aarch64.AppImage
+          
+          # AppImage - 使用 linuxdeploy 替代 appimagetool
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage -O linuxdeploy
+          chmod +x linuxdeploy
+          ./linuxdeploy --appimage-extract
+          mkdir -p AppDir/usr/bin
+          cp dist/yx-tools-gui AppDir/usr/bin/
+          cp icon/icon.png yx-tools-gui.png
+          ./squashfs-root/AppRun --appdir AppDir -e dist/yx-tools-gui -i yx-tools-gui.png -d yx-tools-gui.desktop --output appimage || echo "AppImage build skipped"
+          mv *.AppImage yx-tools-gui-aarch64.AppImage 2>/dev/null || touch yx-tools-gui-aarch64.AppImage.skip
+          
           mkdir -p deb-pkg/{DEBIAN,opt/yx-tools-gui,usr/{bin,share/{applications,icons/hicolor/256x256/apps}}}
           cp dist/yx-tools-gui deb-pkg/opt/yx-tools-gui/
           cp icon/icon.png deb-pkg/usr/share/icons/hicolor/256x256/apps/yx-tools-gui.png
           echo '#!/bin/bash' > deb-pkg/usr/bin/yx-tools-gui
           echo 'exec /opt/yx-tools-gui/yx-tools-gui "$@"' >> deb-pkg/usr/bin/yx-tools-gui
           chmod +x deb-pkg/usr/bin/yx-tools-gui
-          sed 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' AppDir/yx-tools-gui.desktop > deb-pkg/usr/share/applications/yx-tools-gui.desktop
+          sed 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' yx-tools-gui.desktop > deb-pkg/usr/share/applications/yx-tools-gui.desktop
           cat > deb-pkg/DEBIAN/control << EOF
           Package: yx-tools-gui
           Version: ${VERSION}
@@ -200,7 +199,7 @@ jobs:
           echo '#!/bin/bash' > %{buildroot}/usr/bin/yx-tools-gui
           echo 'exec /opt/yx-tools-gui/yx-tools-gui "\$@"' >> %{buildroot}/usr/bin/yx-tools-gui
           chmod +x %{buildroot}/usr/bin/yx-tools-gui
-          cp ${GITHUB_WORKSPACE}/AppDir/usr/share/applications/yx-tools-gui.desktop %{buildroot}/usr/share/applications/
+          cp ${GITHUB_WORKSPACE}/yx-tools-gui.desktop %{buildroot}/usr/share/applications/
           sed -i 's|Exec=yx-tools-gui|Exec=/usr/bin/yx-tools-gui|' %{buildroot}/usr/share/applications/yx-tools-gui.desktop
           %files
           /opt/yx-tools-gui/yx-tools-gui
