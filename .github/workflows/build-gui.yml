@@ -25,8 +25,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-          pip install flet pyinstaller
+          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libfuse2
+          pip install flet pyinstaller pillow
           pip install -r requirements-gui.txt
       
       - name: Build with Flet
@@ -142,7 +142,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install flet pyinstaller
+          pip install flet pyinstaller pillow
           pip install -r requirements-gui.txt
       
       - name: Build with Flet
@@ -151,9 +151,9 @@ jobs:
             -i icon/icon.png `
             --add-data "cloudflare_speedtest.py;." `
             --product-name "yx-tools-gui" `
-            --file-description "Cloudflare 优选 IP 测速工具" `
+            --file-description "Cloudflare IP Speed Test Tool" `
             --product-version "${{ github.event.inputs.version || '1.0.0' }}" `
-            --company-name "Joey & Zag" `
+            --company-name "Joey and Zag" `
             cloudflare_speedtest_gui.py
       
       - name: Upload Windows artifact
@@ -174,7 +174,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install flet pyinstaller
+          pip install flet pyinstaller pillow
           pip install -r requirements-gui.txt
       
       - name: Build with Flet
