@@ -148,20 +148,6 @@ jobs:
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
           
-          # AppImage (may fail on arm64)
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage -O linuxdeploy || true
-          if [ -f linuxdeploy ]; then
-            chmod +x linuxdeploy
-            ./linuxdeploy --appimage-extract || true
-            mkdir -p AppDir/usr/bin
-            cp dist/yx-tools-gui AppDir/usr/bin/
-            cp icon/icon.png yx-tools-gui.png
-            ./squashfs-root/AppRun --appdir AppDir -e dist/yx-tools-gui -i yx-tools-gui.png -d yx-tools-gui.desktop --output appimage || true
-            mv *.AppImage yx-tools-gui-aarch64.AppImage 2>/dev/null || touch yx-tools-gui-aarch64.AppImage.skip
-          else
-            touch yx-tools-gui-aarch64.AppImage.skip
-          fi
-          
           # DEB
           mkdir -p deb-pkg/{DEBIAN,opt/yx-tools-gui,usr/{bin,share/{applications,icons/hicolor/256x256/apps}}}
           cp dist/yx-tools-gui deb-pkg/opt/yx-tools-gui/
@@ -214,7 +200,6 @@ jobs:
           path: |
             yx-tools-gui-*.aarch64.rpm
             yx-tools-gui_*_arm64.deb
-            yx-tools-gui-aarch64.AppImage*
           compression-level: 0
 
   build-windows-x64:
@@ -266,7 +251,7 @@ jobs:
           compression-level: 0
 
   build-macos-intel:
-    runs-on: macos-13
+    runs-on: macos-15-large
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
