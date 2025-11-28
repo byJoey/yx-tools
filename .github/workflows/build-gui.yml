@@ -251,7 +251,7 @@ jobs:
           compression-level: 0
 
   build-macos-intel:
-    runs-on: macos-15-large
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
