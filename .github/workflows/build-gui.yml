@@ -278,38 +278,19 @@ jobs:
         run: |
           pip install flet pyinstaller pillow
           pip install -r requirements-gui.txt
-      - name: Create ICNS icon
-        run: |
-          mkdir -p icon.iconset
-          sips -z 16 16 icon/icon.png --out icon.iconset/icon_16x16.png
-          sips -z 32 32 icon/icon.png --out icon.iconset/icon_16x16@2x.png
-          sips -z 32 32 icon/icon.png --out icon.iconset/icon_32x32.png
-          sips -z 64 64 icon/icon.png --out icon.iconset/icon_32x32@2x.png
-          sips -z 128 128 icon/icon.png --out icon.iconset/icon_128x128.png
-          sips -z 256 256 icon/icon.png --out icon.iconset/icon_128x128@2x.png
-          sips -z 256 256 icon/icon.png --out icon.iconset/icon_256x256.png
-          sips -z 512 512 icon/icon.png --out icon.iconset/icon_256x256@2x.png
-          sips -z 512 512 icon/icon.png --out icon.iconset/icon_512x512.png
-          cp icon/icon.png icon.iconset/icon_512x512@2x.png
-          iconutil -c icns icon.iconset -o icon/icon.icns
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
       - name: Build with Flet
         run: |
-          flet pack -n yx-tools-gui -i icon/icon.icns --add-data "cloudflare_speedtest.py:." --product-name "yx-tools-gui" --bundle-id "com.yxtools.gui" cloudflare_speedtest_gui.py
-      - name: Fix macOS app bundle
-        run: |
-          APP_PATH="dist/yx-tools-gui.app"
-          # 替换所有图标文件
-          find "$APP_PATH/Contents/Resources" -name "*.icns" -exec cp icon/icon.icns {} \;
-          # 修改 Info.plist 确保应用名称正确
-          /usr/libexec/PlistBuddy -c "Set :CFBundleName yx-tools-gui" "$APP_PATH/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName yx-tools-gui" "$APP_PATH/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string yx-tools-gui" "$APP_PATH/Contents/Info.plist"
-          # 清除图标缓存
-          touch "$APP_PATH"
+          flet build macos --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "1.0.0"
       - name: Create DMG
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
           brew install create-dmg
-          create-dmg --volname "yx-tools-gui" --window-size 600 400 --icon-size 100 --icon "yx-tools-gui.app" 150 185 --app-drop-link 450 185 "yx-tools-gui-${VERSION}-intel.dmg" "dist/yx-tools-gui.app" || hdiutil create -volname "yx-tools-gui" -srcfolder dist/yx-tools-gui.app -ov -format UDZO "yx-tools-gui-${VERSION}-intel.dmg"
+          create-dmg --volname "yx-tools-gui" --window-size 600 400 --icon-size 100 --icon "yx-tools-gui.app" 150 185 --app-drop-link 450 185 "yx-tools-gui-${VERSION}-intel.dmg" "build/macos/yx-tools-gui.app" || hdiutil create -volname "yx-tools-gui" -srcfolder build/macos/yx-tools-gui.app -ov -format UDZO "yx-tools-gui-${VERSION}-intel.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: dmg-intel
@@ -327,38 +308,19 @@ jobs:
         run: |
           pip install flet pyinstaller pillow
           pip install -r requirements-gui.txt
-      - name: Create ICNS icon
-        run: |
-          mkdir -p icon.iconset
-          sips -z 16 16 icon/icon.png --out icon.iconset/icon_16x16.png
-          sips -z 32 32 icon/icon.png --out icon.iconset/icon_16x16@2x.png
-          sips -z 32 32 icon/icon.png --out icon.iconset/icon_32x32.png
-          sips -z 64 64 icon/icon.png --out icon.iconset/icon_32x32@2x.png
-          sips -z 128 128 icon/icon.png --out icon.iconset/icon_128x128.png
-          sips -z 256 256 icon/icon.png --out icon.iconset/icon_128x128@2x.png
-          sips -z 256 256 icon/icon.png --out icon.iconset/icon_256x256.png
-          sips -z 512 512 icon/icon.png --out icon.iconset/icon_256x256@2x.png
-          sips -z 512 512 icon/icon.png --out icon.iconset/icon_512x512.png
-          cp icon/icon.png icon.iconset/icon_512x512@2x.png
-          iconutil -c icns icon.iconset -o icon/icon.icns
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
       - name: Build with Flet
         run: |
-          flet pack -n yx-tools-gui -i icon/icon.icns --add-data "cloudflare_speedtest.py:." --product-name "yx-tools-gui" --bundle-id "com.yxtools.gui" cloudflare_speedtest_gui.py
-      - name: Fix macOS app bundle
-        run: |
-          APP_PATH="dist/yx-tools-gui.app"
-          # 替换所有图标文件
-          find "$APP_PATH/Contents/Resources" -name "*.icns" -exec cp icon/icon.icns {} \;
-          # 修改 Info.plist 确保应用名称正确
-          /usr/libexec/PlistBuddy -c "Set :CFBundleName yx-tools-gui" "$APP_PATH/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName yx-tools-gui" "$APP_PATH/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string yx-tools-gui" "$APP_PATH/Contents/Info.plist"
-          # 清除图标缓存
-          touch "$APP_PATH"
+          flet build macos --project "yx-tools-gui" --product "yx-tools-gui" --org "com.yxtools" --build-version "1.0.0"
       - name: Create DMG
         run: |
           VERSION=${{ github.event.inputs.version || '1.0.0' }}
           brew install create-dmg
-          create-dmg --volname "yx-tools-gui" --window-size 600 400 --icon-size 100 --icon "yx-tools-gui.app" 150 185 --app-drop-link 450 185 "yx-tools-gui-${VERSION}-apple-silicon.dmg" "dist/yx-tools-gui.app" || hdiutil create -volname "yx-tools-gui" -srcfolder dist/yx-tools-gui.app -ov -format UDZO "yx-tools-gui-${VERSION}-apple-silicon.dmg"
+          create-dmg --volname "yx-tools-gui" --window-size 600 400 --icon-size 100 --icon "yx-tools-gui.app" 150 185 --app-drop-link 450 185 "yx-tools-gui-${VERSION}-apple-silicon.dmg" "build/macos/yx-tools-gui.app" || hdiutil create -volname "yx-tools-gui" -srcfolder build/macos/yx-tools-gui.app -ov -format UDZO "yx-tools-gui-${VERSION}-apple-silicon.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: dmg-apple-silicon

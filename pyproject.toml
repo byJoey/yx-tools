@@ -1,0 +1,33 @@
+[project]
+name = "yx-tools-gui"
+version = "1.0.0"
+description = "Cloudflare IP 优选测速工具"
+authors = [
+    {name = "Joey & Zag"}
+]
+requires-python = ">=3.8"
+dependencies = [
+    "flet>=0.21.0",
+    "requests>=2.28.0",
+]
+
+[tool.flet]
+# 应用配置
+app.module = "cloudflare_speedtest_gui"
+app.name = "yx-tools-gui"
+app.description = "Cloudflare IP 优选测速工具"
+app.version = "1.0.0"
+
+# 产品信息
+product.name = "yx-tools-gui"
+product.org = "com.yxtools"
+product.bundle_id = "com.yxtools.gui"
+
+# 图标
+app.icon = "icon/icon.png"
+
+# 附加数据
+app.include = [
+    "cloudflare_speedtest.py",
+    "icon/",
+]
