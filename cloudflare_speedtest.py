@@ -355,6 +355,14 @@ CONFIG_FILE = ".cloudflare_speedtest_config.json"
 # 保存交互模式下生成的命令（用于定时任务）
 LAST_GENERATED_COMMAND = None
 
+# Cloudflare 支持的 HTTPS 端口列表
+# 参考: https://developers.cloudflare.com/fundamentals/reference/network-ports/
+CLOUDFLARE_HTTPS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
+
+# 测速 URL 配置
+# 默认 URL（可能不支持多端口下载测速）
+DEFAULT_SPEEDTEST_URL = "https://cf.xiu2.xyz/url"
+
 
 def generate_ipv6_file():
     """生成 IPv6 地址列表文件"""
@@ -705,6 +713,210 @@ def select_ip_version():
             print("✗ 请输入 1 或 2")
 
 
+def select_ports():
+    """选择要测试的端口"""
+    print("\n" + "=" * 60)
+    print(" 端口选择")
+    print("=" * 60)
+    print(" Cloudflare 支持的 HTTPS 端口:")
+    for i, port in enumerate(CLOUDFLARE_HTTPS_PORTS, 1):
+        default_mark = " (默认)" if port == 443 else ""
+        print(f"  {i}. {port}{default_mark}")
+    print(f"  {len(CLOUDFLARE_HTTPS_PORTS) + 1}. 全部端口 - 测试所有支持的端口")
+    print(f"  {len(CLOUDFLARE_HTTPS_PORTS) + 2}. 自定义 - 手动选择多个端口")
+    print("=" * 60)
+    print("💡 提示: 尽量使用单端口, 多端口会大大增加测试时间")
+    
+    while True:
+        choice = input(f"\n请选择端口 [1-{len(CLOUDFLARE_HTTPS_PORTS) + 2}, 默认: 1]: ").strip()
+        if not choice or choice == "1":
+            print("✓ 已选择端口: 443")
+            return [443]
+        
+        try:
+            choice_int = int(choice)
+            if 1 <= choice_int <= len(CLOUDFLARE_HTTPS_PORTS):
+                selected_port = CLOUDFLARE_HTTPS_PORTS[choice_int - 1]
+                print(f"✓ 已选择端口: {selected_port}")
+                return [selected_port]
+            elif choice_int == len(CLOUDFLARE_HTTPS_PORTS) + 1:
+                print(f"✓ 已选择全部端口: {', '.join(map(str, CLOUDFLARE_HTTPS_PORTS))}")
+                return CLOUDFLARE_HTTPS_PORTS.copy()
+            elif choice_int == len(CLOUDFLARE_HTTPS_PORTS) + 2:
+                # 自定义选择多个端口
+                # 使用单字节逗号显示，方便用户复制
+                ports_str = ','.join(map(str, CLOUDFLARE_HTTPS_PORTS))
+                print(f"\n请输入要测试的端口号, 用逗号分隔 (可直接复制下方端口)")
+                print(f"可选端口: {ports_str}")
+                custom_input = input("端口列表: ").strip()
+                if custom_input:
+                    selected_ports = []
+                    # 同时支持中英文逗号
+                    for p in custom_input.replace('，', ',').split(','):
+                        p = p.strip()
+                        if p.isdigit():
+                            port_int = int(p)
+                            if port_int in CLOUDFLARE_HTTPS_PORTS:
+                                if port_int not in selected_ports:
+                                    selected_ports.append(port_int)
+                            else:
+                                print(f"⚠️  端口 {port_int} 不在 Cloudflare 支持列表中, 已跳过")
+                    if selected_ports:
+                        print(f"✓ 已选择端口: {', '.join(map(str, selected_ports))}")
+                        return selected_ports
+                    else:
+                        print("✗ 未选择有效端口, 请重新选择")
+                else:
+                    print("✗ 输入为空, 请重新选择")
+            else:
+                print(f"✗ 请输入 1-{len(CLOUDFLARE_HTTPS_PORTS) + 2} 之间的数字")
+        except ValueError:
+            print("✗ 请输入有效的数字")
+
+
+def select_speedtest_url():
+    """选择测速 URL"""
+    # 尝试读取上次保存的自定义 URL
+    saved_url = None
+    config = load_config()
+    if config and config.get("speedtest_url"):
+        saved_url = config.get("speedtest_url")
+    
+    print("\n" + "=" * 60)
+    print(" 测速 URL 选择")
+    print("=" * 60)
+    print("  1. 默认 URL - cf.xiu2.xyz (可能不支持多端口)")
+    if saved_url:
+        print(f"  2. 上次使用 - {saved_url}")
+        print("  3. 自定义 URL - 输入新的测速地址")
+    else:
+        print("  2. 自定义 URL - 输入自建测速地址 (可根据 URL 特性确认是否支持多端口)")
+    print("=" * 60)
+    
+    while True:
+        if saved_url:
+            choice = input("\n请选择 [1/2/3, 默认: 2]: ").strip()
+            if not choice or choice == "2":
+                print(f"✓ 使用上次的测速 URL: {saved_url}")
+                return saved_url
+            elif choice == "1":
+                print(f"✓ 使用默认测速 URL: {DEFAULT_SPEEDTEST_URL}")
+                print("⚠️  注意: 默认 URL 可能不支持多端口, 非 443 端口下载测速可能失败")
+                return DEFAULT_SPEEDTEST_URL
+            elif choice == "3":
+                custom_url = input("请输入自定义测速 URL (https://...): ").strip()
+                if custom_url:
+                    if not custom_url.startswith("http"):
+                        custom_url = "https://" + custom_url
+                    print(f"✓ 使用自定义测速 URL: {custom_url}")
+                    # 保存到配置文件
+                    save_config(speedtest_url=custom_url)
+                    return custom_url
+                else:
+                    print("✗ URL 不能为空, 请重新输入")
+            else:
+                print("✗ 请输入 1, 2 或 3")
+        else:
+            choice = input("\n请选择 [1/2, 默认: 1]: ").strip()
+            if not choice or choice == "1":
+                print(f"✓ 使用默认测速 URL: {DEFAULT_SPEEDTEST_URL}")
+                print("⚠️  注意: 默认 URL 可能不支持多端口, 非 443 端口下载测速可能失败")
+                return DEFAULT_SPEEDTEST_URL
+            elif choice == "2":
+                custom_url = input("请输入自定义测速 URL (https://...): ").strip()
+                if custom_url:
+                    if not custom_url.startswith("http"):
+                        custom_url = "https://" + custom_url
+                    print(f"✓ 使用自定义测速 URL: {custom_url}")
+                    # 保存到配置文件
+                    save_config(speedtest_url=custom_url)
+                    return custom_url
+                else:
+                    print("✗ URL 不能为空, 请重新输入")
+            else:
+                print("✗ 请输入 1 或 2")
+
+
+def generate_ip_with_ports(ip_file, ports, output_file="ip_with_ports.txt"):
+    """根据 IP 文件和端口列表生成带端口的 IP 文件
+    
+    CloudflareSpeedTest 支持的格式：
+    - 单个 IP: 1.2.3.4:443
+    - CIDR 格式需要使用 -tp 参数指定端口，不能在 IP 后面加端口
+    
+    Args:
+        ip_file: 原始 IP 文件路径
+        ports: 端口列表
+        output_file: 输出文件路径
+    
+    Returns:
+        tuple: (输出文件路径, 端口列表) 或 (None, None) 失败时
+    """
+    if not os.path.exists(ip_file):
+        print(f"❌ IP 文件不存在: {ip_file}")
+        return None, None
+    
+    try:
+        # 读取原始 IP 列表
+        with open(ip_file, 'r', encoding='utf-8') as f:
+            ips = [line.strip() for line in f if line.strip()]
+        
+        if not ips:
+            print("❌ IP 文件为空")
+            return None, None
+        
+        # 检查是否包含 CIDR 格式
+        has_cidr = any('/' in ip for ip in ips)
+        
+        if has_cidr:
+            # CIDR 格式不能在 IP 后面加端口，需要使用 -tp 参数
+            # 直接复制原文件，返回端口列表供命令行使用
+            print(f"📝 检测到 CIDR 格式，将使用 -tp 参数指定端口")
+            
+            # 复制原文件到输出文件
+            with open(output_file, 'w', encoding='utf-8') as f:
+                for ip in ips:
+                    f.write(ip + '\n')
+            
+            print(f"✅ IP 文件已准备: {output_file}")
+            print(f"   IP/CIDR 数量: {len(ips)}")
+            print(f"   测试端口: {', '.join(map(str, ports))}")
+            
+            return output_file, ports
+        else:
+            # 单个 IP 格式，可以在 IP 后面加端口
+            ip_port_list = []
+            for ip in ips:
+                # 如果 IP 已经包含端口，跳过
+                if ':' in ip and not ip.startswith('['):  # IPv4:port 格式
+                    ip_port_list.append(ip)
+                elif ip.startswith('[') and ']:' in ip:  # [IPv6]:port 格式
+                    ip_port_list.append(ip)
+                else:
+                    # 为每个端口生成一条记录
+                    for port in ports:
+                        if ':' in ip:  # IPv6 地址
+                            ip_port_list.append(f"[{ip}]:{port}")
+                        else:  # IPv4 地址
+                            ip_port_list.append(f"{ip}:{port}")
+            
+            # 写入输出文件
+            with open(output_file, 'w', encoding='utf-8') as f:
+                for ip_port in ip_port_list:
+                    f.write(ip_port + '\n')
+            
+            print(f"✅ 已生成带端口的 IP 文件: {output_file}")
+            print(f"   原始 IP 数量: {len(ips)}")
+            print(f"   端口数量: {len(ports)}")
+            print(f"   生成记录数: {len(ip_port_list)}")
+            
+            return output_file, None  # 端口已在文件中，不需要 -tp 参数
+        
+    except Exception as e:
+        print(f"❌ 生成带端口 IP 文件失败: {e}")
+        return None, None
+
+
 def download_cloudflare_ips(ip_version="ipv4", ip_file=CLOUDFLARE_IP_FILE):
     """下载或生成 Cloudflare IP 列表
     
@@ -889,18 +1101,20 @@ def display_preset_configs():
     print("=" * 60)
 
 
-def get_user_input(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4"):
+def get_user_input(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4", selected_ports=None, speedtest_url=None):
     """获取用户输入参数
     
     Args:
         ip_file: 要使用的IP文件路径
         ip_version: IP版本（"ipv4" 或 "ipv6"）
+        selected_ports: 已选择的端口列表
+        speedtest_url: 测速 URL
     """
     # 询问功能选择
     print("\n" + "=" * 60)
     print(" 功能选择")
     print("=" * 60)
-    print("  1. 小白快速测试 - 简单输入，适合新手")
+    print("  1. 小白快速测试 - 简单输入, 适合新手")
     print("  2. 常规测速 - 测试指定机场码的IP速度")
     print("  3. 优选反代 - 从CSV文件生成反代IP列表")
     print("=" * 60)
@@ -911,13 +1125,13 @@ def get_user_input(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4"):
     
     if choice == "1":
         # 小白快速测试模式
-        return handle_beginner_mode(ip_file, ip_version)
+        return handle_beginner_mode(ip_file, ip_version, selected_ports, speedtest_url)
     elif choice == "3":
         # 优选反代模式
         return handle_proxy_mode()
     else:
         # 常规测速模式
-        return handle_normal_mode(ip_file, ip_version)
+        return handle_normal_mode(ip_file, ip_version, selected_ports, speedtest_url)
 
 
 def select_csv_file():
@@ -1126,19 +1340,25 @@ def handle_proxy_mode():
         return None, None, None, None
 
 
-def handle_beginner_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4"):
+def handle_beginner_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4", selected_ports=None, speedtest_url=None):
     """处理小白快速测试模式
     
     Args:
         ip_file: 要使用的IP文件路径
         ip_version: IP版本（"ipv4" 或 "ipv6"）
+        selected_ports: 已选择的端口列表
+        speedtest_url: 测速 URL
     """
     print("\n" + "=" * 70)
     print(" 小白快速测试模式")
     print("=" * 70)
-    print(" 此功能专为新手设计，只需要输入3个简单的数字即可开始测试")
+    print(" 此功能专为新手设计，只需要输入几个简单的数字即可开始测试")
     print(" 无需了解复杂的参数设置，程序会引导您完成所有配置")
     print("=" * 70)
+    
+    # 如果没有传入端口，使用默认端口
+    if selected_ports is None:
+        selected_ports = [443]
     
     # 获取测试IP数量
     print("\n📊 第一步：设置测试IP数量")
@@ -1236,7 +1456,20 @@ def handle_beginner_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4"):
     
     print(f"\n🎯 开始测速...")
     print(f"参数: 测试{dn_count}个IP, 速度下限{speed_limit}MB/s, 延迟上限{time_limit}ms")
+    print(f"端口: {', '.join(map(str, selected_ports))}")
     print("模式: 小白快速测试（全自动，无需选择地区）")
+    
+    # 如果选择了多个端口或非默认端口，生成带端口的 IP 文件
+    actual_ip_file = ip_file
+    tp_ports = None  # 用于 -tp 参数的端口列表（CIDR 格式时使用）
+    if len(selected_ports) > 1 or selected_ports[0] != 443:
+        print(f"\n正在生成带端口的 IP 文件...")
+        generated_file, tp_ports = generate_ip_with_ports(ip_file, selected_ports, "ip_with_ports.txt")
+        if generated_file:
+            actual_ip_file = generated_file
+        else:
+            print("⚠️  生成带端口文件失败，将使用默认端口 443")
+            tp_ports = None
     
     # 直接使用 Cloudflare IP 列表进行测速
     print(f"\n正在使用 Cloudflare IP 列表进行测速...")
@@ -1245,37 +1478,104 @@ def handle_beginner_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4"):
     os_type, arch_type = get_system_info()
     exec_name = download_cloudflare_speedtest(os_type, arch_type)
     
-    # 构建测速命令
-    if sys.platform == "win32":
-        cmd = [exec_name]
+    # 如果是 CIDR 格式且有多个端口，需要分别测试每个端口
+    if tp_ports and len(tp_ports) > 1:
+        print(f"\n📝 CIDR 格式需要分别测试每个端口...")
+        all_results = []
+        
+        for port in tp_ports:
+            print(f"\n🔍 正在测试端口 {port}...")
+            
+            # 构建测速命令
+            if sys.platform == "win32":
+                cmd = [exec_name]
+            else:
+                cmd = [f"./{exec_name}"]
+            
+            temp_result_file = f"result_port_{port}.csv"
+            cmd.extend([
+                "-f", actual_ip_file,
+                "-n", thread_count,
+                "-dn", dn_count,
+                "-sl", speed_limit,
+                "-tl", time_limit,
+                "-tp", str(port),
+                "-o", temp_result_file
+            ])
+            
+            # 非 443 端口使用用户选择的测速 URL（默认 URL 不支持其他端口下载测速）
+            if port != 443 and speedtest_url:
+                cmd.extend(["-url", speedtest_url])
+            
+            print(f"运行命令: {' '.join(cmd)}")
+            result = subprocess.run(cmd, encoding='utf-8', errors='replace')
+            
+            if result.returncode == 0 and os.path.exists(temp_result_file):
+                # 读取结果并添加端口信息
+                with open(temp_result_file, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                    if lines:
+                        if not all_results:  # 第一个文件，保留表头
+                            all_results.append(lines[0])
+                        all_results.extend(lines[1:])  # 跳过表头
+                os.remove(temp_result_file)
+        
+        # 合并所有结果到 result.csv
+        if all_results:
+            with open("result.csv", 'w', encoding='utf-8') as f:
+                f.writelines(all_results)
+            print(f"\n✅ 所有端口测速完成！结果已合并保存到 result.csv")
+            print("📊 您可以查看 result.csv 文件来了解详细的测试结果")
+            print("💡 提示：结果文件中的IP按速度从快到慢排序")
+            
+            # 询问是否上报结果
+            upload_info = upload_results_to_api("result.csv")
+        else:
+            print("\n❌ 所有端口测速均失败")
+            upload_info = None
     else:
-        cmd = [f"./{exec_name}"]
-    
-    cmd.extend([
-        "-f", ip_file,
-        "-n", thread_count,
-        "-dn", dn_count,
-        "-sl", speed_limit,
-        "-tl", time_limit,
-        "-url", DEFAULT_SPEEDTEST_URL,
-        "-o", "result.csv"
-    ])
-    
-    print(f"\n运行命令: {' '.join(cmd)}")
-    print("=" * 50)
-    
-    # 运行测速
-    result = subprocess.run(cmd, encoding='utf-8', errors='replace')
-    
-    if result.returncode == 0:
-        print("\n✅ 测速完成！结果已保存到 result.csv")
-        print("📊 您可以查看 result.csv 文件来了解详细的测试结果")
-        print("💡 提示：结果文件中的IP按速度从快到慢排序")
+        # 单个端口或非 CIDR 格式
+        # 构建测速命令
+        if sys.platform == "win32":
+            cmd = [exec_name]
+        else:
+            cmd = [f"./{exec_name}"]
         
-        # 询问是否上报结果
-        upload_info = upload_results_to_api("result.csv")
+        cmd.extend([
+            "-f", actual_ip_file,
+            "-n", thread_count,
+            "-dn", dn_count,
+            "-sl", speed_limit,
+            "-tl", time_limit,
+            "-o", "result.csv"
+        ])
         
-        # 输出对应的命令行命令
+        # 如果需要使用 -tp 参数指定单个端口（CIDR 格式时）
+        if tp_ports and len(tp_ports) == 1:
+            cmd.extend(["-tp", str(tp_ports[0])])
+            # 非 443 端口使用用户选择的测速 URL
+            if tp_ports[0] != 443 and speedtest_url:
+                cmd.extend(["-url", speedtest_url])
+        
+        print(f"\n运行命令: {' '.join(cmd)}")
+        print("=" * 50)
+        
+        # 运行测速
+        result = subprocess.run(cmd, encoding='utf-8', errors='replace')
+        
+        if result.returncode == 0:
+            print("\n✅ 测速完成！结果已保存到 result.csv")
+            print("📊 您可以查看 result.csv 文件来了解详细的测试结果")
+            print("💡 提示：结果文件中的IP按速度从快到慢排序")
+            
+            # 询问是否上报结果
+            upload_info = upload_results_to_api("result.csv")
+        else:
+            print("\n❌ 测速失败")
+            upload_info = None
+    
+    # 输出对应的命令行命令
+    if upload_info is not None or (tp_ports and len(tp_ports) > 1 and all_results):
         print("\n" + "=" * 80)
         print(" 💡 快速复用命令")
         print("=" * 80)
@@ -1289,19 +1589,23 @@ def handle_beginner_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4"):
         print("-" * 80)
         print("💡 提示：您可以复制上面的命令，下次直接使用命令行模式运行")
         print("=" * 80)
-    else:
-        print("\n❌ 测速失败")
     
     return "ALL", dn_count, speed_limit, time_limit, thread_count
 
 
-def handle_normal_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4"):
+def handle_normal_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4", selected_ports=None, speedtest_url=None):
     """处理常规测速模式
     
     Args:
         ip_file: 要使用的IP文件路径
         ip_version: IP版本（"ipv4" 或 "ipv6"）
+        selected_ports: 已选择的端口列表
+        speedtest_url: 测速 URL
     """
+    # 如果没有传入端口，使用默认端口
+    if selected_ports is None:
+        selected_ports = [443]
+    
     print("\n开始检测可用地区...")
     print("正在使用HTTPing模式检测各地区可用性...")
     
@@ -1442,6 +1746,7 @@ def handle_normal_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4"):
             print("✗ 请输入有效的数字")
     
     print(f"\n测速参数: 地区={cfcolo}, 测试{dn_count}个IP, 速度下限{speed_limit}MB/s, 延迟上限{time_limit}ms, 线程数={thread_count}")
+    print(f"端口: {', '.join(map(str, selected_ports))}")
     print("模式: 常规测速（指定地区）")
     
     # 从地区扫描结果中提取该地区的IP进行测速
@@ -1468,41 +1773,118 @@ def handle_normal_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4"):
             
             print(f"找到 {len(region_ips)} 个 {cfcolo} 地区的IP，开始测速...")
             
+            # 如果选择了多个端口或非默认端口，生成带端口的 IP 文件
+            actual_ip_file = region_ip_file
+            tp_ports = None
+            if len(selected_ports) > 1 or selected_ports[0] != 443:
+                print(f"\n正在生成带端口的 IP 文件...")
+                generated_file, tp_ports = generate_ip_with_ports(region_ip_file, selected_ports, "ip_with_ports.txt")
+                if generated_file:
+                    actual_ip_file = generated_file
+                else:
+                    print("⚠️  生成带端口文件失败，将使用默认端口 443")
+                    tp_ports = None
+            
+            print(f"开始测速...")
+            
             # 使用该地区的IP文件进行测速
             os_type, arch_type = get_system_info()
             exec_name = download_cloudflare_speedtest(os_type, arch_type)
             
-            # 构建测速命令
-            if sys.platform == "win32":
-                cmd = [exec_name]
-            else:
-                cmd = [f"./{exec_name}"]
-            
-            cmd.extend([
-                "-f", region_ip_file,
-                "-n", thread_count,
-                "-dn", dn_count,
-                "-sl", speed_limit,
-                "-tl", time_limit,
-                "-url", DEFAULT_SPEEDTEST_URL,
-                "-o", "result.csv"
-            ])
-            
-            print(f"\n运行命令: {' '.join(cmd)}")
-            print("=" * 50)
-            
-            # 运行测速
-            result = subprocess.run(cmd, encoding='utf-8', errors='replace')
-            
-            # 清理临时文件
-            if os.path.exists(region_ip_file):
-                os.remove(region_ip_file)
-            
-            if result.returncode == 0:
-                print("\n✅ 测速完成！结果已保存到 result.csv")
+            # 如果是 CIDR 格式且有多个端口，需要分别测试每个端口
+            if tp_ports and len(tp_ports) > 1:
+                print(f"\n📝 CIDR 格式需要分别测试每个端口...")
+                all_results = []
                 
-                # 询问是否上报结果
-                upload_info = upload_results_to_api("result.csv")
+                for port in tp_ports:
+                    print(f"\n🔍 正在测试端口 {port}...")
+                    
+                    if sys.platform == "win32":
+                        cmd = [exec_name]
+                    else:
+                        cmd = [f"./{exec_name}"]
+                    
+                    temp_result_file = f"result_port_{port}.csv"
+                    cmd.extend([
+                        "-f", actual_ip_file,
+                        "-n", thread_count,
+                        "-dn", dn_count,
+                        "-sl", speed_limit,
+                        "-tl", time_limit,
+                        "-tp", str(port),
+                        "-o", temp_result_file
+                    ])
+                    
+                    # 非 443 端口使用用户选择的测速 URL（默认 URL 不支持其他端口下载测速）
+                    if port != 443 and speedtest_url:
+                        cmd.extend(["-url", speedtest_url])
+                    
+                    print(f"运行命令: {' '.join(cmd)}")
+                    result = subprocess.run(cmd, encoding='utf-8', errors='replace')
+                    
+                    if result.returncode == 0 and os.path.exists(temp_result_file):
+                        with open(temp_result_file, 'r', encoding='utf-8') as f:
+                            lines = f.readlines()
+                            if lines:
+                                if not all_results:
+                                    all_results.append(lines[0])
+                                all_results.extend(lines[1:])
+                        os.remove(temp_result_file)
+                
+                # 清理临时文件
+                if os.path.exists(region_ip_file):
+                    os.remove(region_ip_file)
+                if actual_ip_file != region_ip_file and os.path.exists(actual_ip_file):
+                    os.remove(actual_ip_file)
+                
+                if all_results:
+                    with open("result.csv", 'w', encoding='utf-8') as f:
+                        f.writelines(all_results)
+                    print(f"\n✅ 所有端口测速完成！结果已合并保存到 result.csv")
+                    upload_info = upload_results_to_api("result.csv")
+                else:
+                    print("\n❌ 所有端口测速均失败")
+                    upload_info = None
+            else:
+                # 单个端口或非 CIDR 格式
+                if sys.platform == "win32":
+                    cmd = [exec_name]
+                else:
+                    cmd = [f"./{exec_name}"]
+                
+                cmd.extend([
+                    "-f", actual_ip_file,
+                    "-n", thread_count,
+                    "-dn", dn_count,
+                    "-sl", speed_limit,
+                    "-tl", time_limit,
+                    "-o", "result.csv"
+                ])
+                
+                # 如果需要使用 -tp 参数指定单个端口（CIDR 格式时）
+                if tp_ports and len(tp_ports) == 1:
+                    cmd.extend(["-tp", str(tp_ports[0])])
+                    if tp_ports[0] != 443 and speedtest_url:
+                        cmd.extend(["-url", speedtest_url])
+                
+                print(f"\n运行命令: {' '.join(cmd)}")
+                print("=" * 50)
+                
+                # 运行测速
+                result = subprocess.run(cmd, encoding='utf-8', errors='replace')
+                
+                # 清理临时文件
+                if os.path.exists(region_ip_file):
+                    os.remove(region_ip_file)
+                if actual_ip_file != region_ip_file and os.path.exists(actual_ip_file):
+                    os.remove(actual_ip_file)
+                
+                if result.returncode == 0:
+                    print("\n✅ 测速完成！结果已保存到 result.csv")
+                    upload_info = upload_results_to_api("result.csv")
+                else:
+                    print("\n❌ 测速失败")
+                    upload_info = None
                 
                 # 输出对应的命令行命令
                 print("\n" + "=" * 80)
@@ -1518,8 +1900,6 @@ def handle_normal_mode(ip_file=CLOUDFLARE_IP_FILE, ip_version="ipv4"):
                 print("-" * 80)
                 print("💡 提示：您可以复制上面的命令，下次直接使用命令行模式运行")
                 print("=" * 80)
-            else:
-                print("\n❌ 测速失败")
         else:
             print(f"❌ 未找到 {cfcolo} 地区的IP")
     else:
@@ -2147,6 +2527,14 @@ def main():
         print("❌ 准备IP列表失败")
         return 1
     
+    # 选择测试端口
+    selected_ports = select_ports()
+    
+    # 如果选择了非 443 端口，询问测速 URL
+    speedtest_url = None
+    if len(selected_ports) > 1 or (len(selected_ports) == 1 and selected_ports[0] != 443):
+        speedtest_url = select_speedtest_url()
+    
     # 获取用户输入
     print(f"\n[参数配置]")
     print("=" * 60)
@@ -2155,7 +2543,7 @@ def main():
     print(" 博客 https://joeyblog.net")
     print(" Telegram交流群: https://t.me/+ft-zI76oovgwNmRh")
     print("=" * 60)
-    result = get_user_input(ip_file, ip_version)
+    result = get_user_input(ip_file, ip_version, selected_ports, speedtest_url)
     
     # 检查是否是优选反代模式
     if result == (None, None, None, None):
@@ -2669,7 +3057,7 @@ def load_config():
     return None
 
 
-def save_config(worker_domain=None, uuid=None, github_token=None, repo_info=None, file_path=None):
+def save_config(worker_domain=None, uuid=None, github_token=None, repo_info=None, file_path=None, speedtest_url=None):
     """保存配置到文件"""
     try:
         # 加载现有配置
@@ -2693,6 +3081,10 @@ def save_config(worker_domain=None, uuid=None, github_token=None, repo_info=None
             if file_path:
                 existing_config["file_path"] = file_path
             existing_config["github_last_used"] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 保存自定义测速 URL
+        if speedtest_url:
+            existing_config["speedtest_url"] = speedtest_url
         
         # 保存配置
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
