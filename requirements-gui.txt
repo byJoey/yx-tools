@@ -1,0 +1,2 @@
+# Cloudflare SpeedTest GUI 依赖
+flet>=0.21.0
