@@ -92,6 +92,9 @@ pip install -r requirements.txt
 # 运行程序（命令行模式）
 python3 cloudflare_speedtest.py --mode beginner --count 10 --speed 1 --delay 1000
 
+# 运行程序（图形模式）
+python3 cloudflare_speedtest_gui.py
+
 # 查看帮助
 python3 cloudflare_speedtest.py --help
 ```
