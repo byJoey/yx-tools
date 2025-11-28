@@ -18,6 +18,35 @@ from pathlib import Path
 from datetime import datetime
 
 
+def get_app_data_dir():
+    """
+    获取应用数据目录（用于存放下载的可执行文件等）
+    在打包后的应用中，当前目录可能是只读的，需要使用用户数据目录
+    """
+    app_name = "yx-tools"
+    
+    if sys.platform == "darwin":
+        # macOS: ~/Library/Application Support/yx-tools
+        base = os.path.expanduser("~/Library/Application Support")
+    elif sys.platform == "win32":
+        # Windows: %APPDATA%/yx-tools
+        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+    else:
+        # Linux: ~/.local/share/yx-tools
+        base = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
+    
+    app_dir = os.path.join(base, app_name)
+    
+    # 确保目录存在
+    try:
+        os.makedirs(app_dir, exist_ok=True)
+    except Exception:
+        # 如果创建失败，回退到当前目录
+        app_dir = os.getcwd()
+    
+    return app_dir
+
+
 # 使用curl的备用HTTP请求函数（解决SSL模块不可用的问题）
 def curl_request(url, method='GET', data=None, headers=None, timeout=30):
     """
@@ -551,18 +580,41 @@ def download_file(url, filename):
 
 def download_cloudflare_speedtest(os_type, arch_type):
     """下载 CloudflareSpeedTest 可执行文件（优先使用反代版本）"""
-    # 优先检查反代版本
-    if os_type == "win":
-        proxy_exec_name = f"CloudflareST_proxy_{os_type}_{arch_type}.exe"
-    else:
-        proxy_exec_name = f"CloudflareST_proxy_{os_type}_{arch_type}"
+    # 获取应用数据目录（用于存放下载的可执行文件）
+    app_data_dir = get_app_data_dir()
     
-    if os.path.exists(proxy_exec_name):
-        print(f"✓ 使用反代版本: {proxy_exec_name}")
-        return proxy_exec_name
+    # 构建可执行文件名
+    if os_type == "win":
+        exec_basename = f"CloudflareST_proxy_{os_type}_{arch_type}.exe"
+    else:
+        exec_basename = f"CloudflareST_proxy_{os_type}_{arch_type}"
+    
+    # 完整路径
+    proxy_exec_path = os.path.join(app_data_dir, exec_basename)
+    
+    # 优先检查应用数据目录中的反代版本
+    if os.path.exists(proxy_exec_path):
+        # 确保有执行权限
+        if os_type != "win":
+            try:
+                os.chmod(proxy_exec_path, 0o755)
+            except Exception:
+                pass
+        print(f"✓ 使用反代版本: {proxy_exec_path}")
+        return proxy_exec_path
+    
+    # 也检查当前目录（兼容旧版本）
+    if os.path.exists(exec_basename):
+        if os_type != "win":
+            try:
+                os.chmod(exec_basename, 0o755)
+            except Exception:
+                pass
+        print(f"✓ 使用反代版本: {exec_basename}")
+        return os.path.abspath(exec_basename)
     
     # 检查是否已下载反代版本
-    print("反代版本不存在，开始下载反代版本...")
+    print(f"反代版本不存在，开始下载反代版本到 {app_data_dir}...")
     
     # 构建下载URL - 使用您的GitHub仓库
     if os_type == "win":
@@ -585,51 +637,49 @@ def download_cloudflare_speedtest(os_type, arch_type):
     
     download_url = f"https://github.com/byJoey/CloudflareSpeedTest/releases/download/v1.0/{archive_name}"
     
-    if not download_file(download_url, archive_name):
+    # 下载到应用数据目录
+    archive_path = os.path.join(app_data_dir, archive_name)
+    
+    if not download_file(download_url, archive_path):
         # 备用方案: 尝试 HTTP 下载
         http_url = download_url.replace("https://", "http://")
-        if not download_file(http_url, archive_name):
+        if not download_file(http_url, archive_path):
             # 所有自动下载都失败，提供手动下载说明
             print("\n" + "="*60)
             print("自动下载失败，请手动下载反代版本:")
             print(f"下载地址: {download_url}")
-            print(f"解压后文件名应为: CloudflareST_proxy_{os_type}_{arch_type}{'.exe' if os_type == 'win' else ''}")
+            print(f"解压后放到: {app_data_dir}")
+            print(f"文件名应为: {exec_basename}")
             print("="*60)
             
             # 检查是否有手动下载的反代版本文件
-            if os_type == "win":
-                proxy_exec_name = f"CloudflareST_proxy_{os_type}_{arch_type}.exe"
-            else:
-                proxy_exec_name = f"CloudflareST_proxy_{os_type}_{arch_type}"
-            
-            if os.path.exists(proxy_exec_name):
-                print(f"找到手动下载的反代版本: {proxy_exec_name}")
-                # 手动下载的文件也需要赋予执行权限
+            if os.path.exists(proxy_exec_path):
+                print(f"找到手动下载的反代版本: {proxy_exec_path}")
                 if os_type != "win":
-                    os.chmod(proxy_exec_name, 0o755)
-                    print(f"已赋予执行权限: {proxy_exec_name}")
-                return proxy_exec_name
+                    os.chmod(proxy_exec_path, 0o755)
+                    print(f"已赋予执行权限: {proxy_exec_path}")
+                return proxy_exec_path
             else:
                 print("未找到反代版本文件，程序无法继续")
                 if sys.platform == "win32":
                     input("按 Enter 键退出...")
                 sys.exit(1)
     else:
-        # 解压文件
-        print(f"正在解压: {archive_name}")
+        # 解压文件到应用数据目录
+        print(f"正在解压: {archive_path}")
         try:
             if archive_name.endswith('.zip'):
                 import zipfile
-                with zipfile.ZipFile(archive_name, 'r') as zip_ref:
-                    zip_ref.extractall('.')
+                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                    zip_ref.extractall(app_data_dir)
             elif archive_name.endswith('.tar.gz'):
                 import tarfile
-                with tarfile.open(archive_name, 'r:gz') as tar_ref:
-                    tar_ref.extractall('.')
+                with tarfile.open(archive_path, 'r:gz') as tar_ref:
+                    tar_ref.extractall(app_data_dir)
             
             # 查找反代版本可执行文件
             found_executable = None
-            for root, dirs, files in os.walk('.'):
+            for root, dirs, files in os.walk(app_data_dir):
                 for file in files:
                     if file.startswith('CloudflareST_proxy_') and not file.endswith(('.zip', '.tar.gz')):
                         found_executable = os.path.join(root, file)
@@ -638,19 +688,12 @@ def download_cloudflare_speedtest(os_type, arch_type):
                     break
             
             if found_executable:
-                # 获取最终文件名 - 使用标准格式
-                if os_type == "win":
-                    final_name = f"CloudflareST_proxy_{os_type}_{arch_type}.exe"
-                else:
-                    final_name = f"CloudflareST_proxy_{os_type}_{arch_type}"
-                
-                # 如果文件不在当前目录或文件名不匹配，移动到当前目录并重命名
-                if os.path.abspath(found_executable) != os.path.abspath(final_name):
-                    if os.path.exists(final_name):
-                        os.remove(final_name)
-                    # 确保源文件存在
+                # 如果文件名不匹配，重命名
+                if os.path.abspath(found_executable) != os.path.abspath(proxy_exec_path):
+                    if os.path.exists(proxy_exec_path):
+                        os.remove(proxy_exec_path)
                     if os.path.exists(found_executable):
-                        os.rename(found_executable, final_name)
+                        os.rename(found_executable, proxy_exec_path)
                     else:
                         print(f"❌ 源文件不存在: {found_executable}")
                         if sys.platform == "win32":
@@ -659,24 +702,26 @@ def download_cloudflare_speedtest(os_type, arch_type):
                 
                 # 设置执行权限
                 if os_type != "win":
-                    os.chmod(final_name, 0o755)
+                    os.chmod(proxy_exec_path, 0o755)
                 
-                print(f"✓ 反代版本设置完成: {final_name}")
-                return final_name
+                # 清理压缩包
+                try:
+                    os.remove(archive_path)
+                except Exception:
+                    pass
+                
+                print(f"✓ 反代版本设置完成: {proxy_exec_path}")
+                return proxy_exec_path
             else:
                 print("解压后未找到反代版本可执行文件")
-                # 列出解压后的所有文件用于调试
                 print("解压后的文件:")
-                for root, dirs, files in os.walk('.'):
+                for root, dirs, files in os.walk(app_data_dir):
                     for file in files:
                         if not file.endswith(('.zip', '.tar.gz', '.txt', '.md')):
                             print(f"  - {os.path.join(root, file)}")
                 if sys.platform == "win32":
                     input("按 Enter 键退出...")
                 sys.exit(1)
-            
-            # 清理压缩包
-            os.remove(archive_name)
             
         except Exception as e:
             print(f"解压失败: {e}")
@@ -686,10 +731,10 @@ def download_cloudflare_speedtest(os_type, arch_type):
     
     # 在Unix系统上赋予执行权限
     if os_type != "win":
-        os.chmod(proxy_exec_name, 0o755)
-        print(f"已赋予执行权限: {proxy_exec_name}")
+        os.chmod(proxy_exec_path, 0o755)
+        print(f"已赋予执行权限: {proxy_exec_path}")
     
-    return proxy_exec_name
+    return proxy_exec_path
 
 
 def select_ip_version():
