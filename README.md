@@ -56,8 +56,8 @@
 - **现代化图形界面** - 操作更加直观友好
 - **主题切换** - 可根据个人喜好选择主题
 - **多架构支持** - 支持amd64和arm64架构
--   <img width="2104" height="1798" alt="image" src="https://github.com/user-attachments/assets/f6438b5c-3108-434b-95b8-1a60166332aa" />
-<img width="2104" height="1798" alt="image" src="https://github.com/user-attachments/assets/47eaab5d-74c1-4e64-9d76-b63f9aafca8a" /> 
+  <img width="2104" height="1798" alt="image" src="https://github.com/user-attachments/assets/f6438b5c-3108-434b-95b8-1a60166332aa" />
+  <img width="2104" height="1798" alt="image" src="https://github.com/user-attachments/assets/47eaab5d-74c1-4e64-9d76-b63f9aafca8a" /> 
 
 ## 支持平台
 
