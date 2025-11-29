@@ -55,6 +55,11 @@
 ### 图形化界面
   <img width="2104" height="1798" alt="image" src="https://github.com/user-attachments/assets/f6438b5c-3108-434b-95b8-1a60166332aa" />
   <img width="2104" height="1798" alt="image" src="https://github.com/user-attachments/assets/47eaab5d-74c1-4e64-9d76-b63f9aafca8a" />
+- **Docker镜像** - 提供官方Docker镜像，开箱即用
+- **Docker Compose** - 支持Docker Compose一键部署
+- **数据持久化** - 支持挂载数据目录，保存测速结果
+- **多架构支持** - 支持amd64和arm64架构
+- **环境隔离** - 容器化运行，环境干净整洁  
 - **现代化图形界面** - 操作更加直观友好
 - **主题切换** - 可根据个人喜好选择主题
 - **多架构支持** - 支持amd64和arm64架构
