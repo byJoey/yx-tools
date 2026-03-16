@@ -33,7 +33,9 @@ def curl_request(url, method='GET', data=None, headers=None, timeout=30):
     Returns:
         dict: 包含status_code、json、text等属性的响应对象模拟
     """
-    cmd = ['curl', '-s', '-w', '\\n%{http_code}', '-X', method, '--connect-timeout', str(timeout)]
+    # 在 Windows 上使用 curl.exe 避免 PowerShell 别名问题
+    curl_cmd = 'curl.exe' if sys.platform == 'win32' else 'curl'
+    cmd = [curl_cmd, '-s', '-w', '\\n%{http_code}', '-X', method, '--connect-timeout', str(timeout)]
     
     # 添加请求头
     if headers:
@@ -384,7 +386,7 @@ def get_system_info():
         os_type = "win"
     else:
         print(f"不支持的操作系统: {system}")
-        if sys.platform == "win32":
+        if sys.platform == "win32" and sys.stdin.isatty():
             input("按 Enter 键退出...")
         sys.exit(1)
     
@@ -397,7 +399,7 @@ def get_system_info():
         arch_type = "arm"
     else:
         print(f"不支持的架构: {machine}")
-        if sys.platform == "win32":
+        if sys.platform == "win32" and sys.stdin.isatty():
             input("按 Enter 键退出...")
         sys.exit(1)
     
@@ -433,8 +435,9 @@ def download_file(url, filename):
         except ImportError as e:
             # SSL模块不可用，静默切换到curl下载
             if "SSL module is not available" in str(e):
+                curl_cmd = 'curl.exe' if sys.platform == 'win32' else 'curl'
                 result = subprocess.run([
-                    "curl", "-L", "-o", filename, url
+                    curl_cmd, "-L", "-o", filename, url
                 ], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
                 
                 if result.returncode == 0 and os.path.exists(filename):
@@ -464,8 +467,9 @@ def download_file(url, filename):
     
     # 方法3: 尝试使用 curl
     try:
+        curl_cmd = 'curl.exe' if sys.platform == 'win32' else 'curl'
         result = subprocess.run([
-            "curl", "-L", "-o", filename, url
+            curl_cmd, "-L", "-o", filename, url
         ], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
         
         if result.returncode == 0 and os.path.exists(filename):
@@ -523,8 +527,9 @@ def download_file(url, filename):
             except ImportError as e:
                 # SSL模块不可用，静默切换到curl下载
                 if "SSL module is not available" in str(e):
+                    curl_cmd = 'curl.exe' if sys.platform == 'win32' else 'curl'
                     result = subprocess.run([
-                        "curl", "-L", "-o", filename, http_url
+                        curl_cmd, "-L", "-o", filename, http_url
                     ], capture_output=True, text=True, timeout=60)
                     
                     if result.returncode == 0 and os.path.exists(filename):
@@ -603,7 +608,7 @@ def download_cloudflare_speedtest(os_type, arch_type):
                 return proxy_exec_name
             else:
                 print("未找到反代版本文件，程序无法继续")
-                if sys.platform == "win32":
+                if sys.platform == "win32" and sys.stdin.isatty():
                     input("按 Enter 键退出...")
                 sys.exit(1)
     else:
@@ -645,7 +650,7 @@ def download_cloudflare_speedtest(os_type, arch_type):
                         os.rename(found_executable, final_name)
                     else:
                         print(f"❌ 源文件不存在: {found_executable}")
-                        if sys.platform == "win32":
+                        if sys.platform == "win32" and sys.stdin.isatty():
                             input("按 Enter 键退出...")
                         sys.exit(1)
                 
@@ -663,7 +668,7 @@ def download_cloudflare_speedtest(os_type, arch_type):
                     for file in files:
                         if not file.endswith(('.zip', '.tar.gz', '.txt', '.md')):
                             print(f"  - {os.path.join(root, file)}")
-                if sys.platform == "win32":
+                if sys.platform == "win32" and sys.stdin.isatty():
                     input("按 Enter 键退出...")
                 sys.exit(1)
             
@@ -672,7 +677,7 @@ def download_cloudflare_speedtest(os_type, arch_type):
             
         except Exception as e:
             print(f"解压失败: {e}")
-            if sys.platform == "win32":
+            if sys.platform == "win32" and sys.stdin.isatty():
                 input("按 Enter 键退出...")
             sys.exit(1)
     
@@ -1620,8 +1625,9 @@ def run_speedtest_with_file(ip_file, dn_count, speed_limit, time_limit, thread_c
         exec_name = download_cloudflare_speedtest(os_type, arch_type)
         
         # 构建命令（反代模式使用TCPing，专注于端口信息）
+        exec_path = exec_name if sys.platform == "win32" else f"./{exec_name}"
         cmd = [
-            f"./{exec_name}",
+            exec_path,
             "-f", ip_file,
             "-n", thread_count,
             "-dn", dn_count,
@@ -1644,8 +1650,9 @@ def run_speedtest_with_file(ip_file, dn_count, speed_limit, time_limit, thread_c
         else:
             print(f"\n测速失败，返回码: {result.returncode}")
         
-        # 等待用户按键，不自动关闭窗口
-        input("\n按回车键退出...")
+        # 等待用户按键，不自动关闭窗口 (仅在交互模式下)
+        if sys.stdin.isatty():
+            input("\n按回车键退出...")
         return 0
         
     except Exception as e:
@@ -2160,8 +2167,8 @@ def main():
     # 检查是否是优选反代模式
     if result == (None, None, None, None):
         print("\n优选反代功能已完成，程序退出")
-        # Windows 系统添加暂停，避免窗口立即关闭
-        if sys.platform == "win32":
+        # Windows 系统添加暂停，避免窗口立即关闭 (仅在交互模式下)
+        if sys.platform == "win32" and sys.stdin.isatty():
             print("\n" + "=" * 60)
             input("按 Enter 键退出...")
         return 0
@@ -2176,8 +2183,8 @@ def main():
     elif sys.platform == "win32":
         setup_windows_task()
     
-    # Windows 系统添加暂停，避免窗口立即关闭
-    if sys.platform == "win32":
+    # Windows 系统添加暂停，避免窗口立即关闭 (仅在交互模式下)
+    if sys.platform == "win32" and sys.stdin.isatty():
         print("\n" + "=" * 60)
         input("按 Enter 键退出...")
     
@@ -4149,7 +4156,10 @@ def detect_available_regions():
     # 检查是否已有检测结果文件
     if os.path.exists("region_scan.csv"):
         print("发现已有的地区扫描结果文件")
-        choice = input("是否需要重新扫描？[y/N]: ").strip().lower()
+        if sys.stdin.isatty():
+            choice = input("是否需要重新扫描？[y/N]: ").strip().lower()
+        else:
+            choice = 'n'
         if choice != 'y':
             print("使用已有检测结果...")
             # 直接读取已有文件
@@ -4266,8 +4276,8 @@ if __name__ == "__main__":
         sys.exit(exit_code)
     except KeyboardInterrupt:
         print("\n\n用户取消操作")
-        # Windows 系统添加暂停，避免窗口立即关闭
-        if sys.platform == "win32":
+        # Windows 系统添加暂停，避免窗口立即关闭 (仅在交互模式下)
+        if sys.platform == "win32" and sys.stdin.isatty():
             print("\n" + "=" * 60)
             input("按 Enter 键退出...")
         sys.exit(0)
@@ -4278,8 +4288,8 @@ if __name__ == "__main__":
         print(f"   2. 确保有足够的磁盘空间")
         print(f"   3. 检查Python环境是否正常")
         print(f"   4. 如果问题持续，请联系技术支持")
-        # Windows 系统添加暂停，避免窗口立即关闭
-        if sys.platform == "win32":
+        # Windows 系统添加暂停，避免窗口立即关闭 (仅在交互模式下)
+        if sys.platform == "win32" and sys.stdin.isatty():
             print("\n" + "=" * 60)
             input("按 Enter 键退出...")
         sys.exit(1)
