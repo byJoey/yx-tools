@@ -10,6 +10,7 @@ sudo docker compose up -d
 sudo docker compose down
 # 编辑 yx-tools/config/crontab 创建定时任务
 # 非常不推荐通过 docker-compose 环境变量创建定时任务，有容器重启一次，加一条定时任务的问题
+0 3 * * * /usr/local/bin/python3 /app/cloudflare_speedtest.py --mode beginner --count 100 --speed 1.0 --delay 1000 --thread 10 --upload gist --token 'ghp_xxxx' --gist-id 1axxxx3b --gist-file xxxx.txt --upload-count 100
 sudo docker compose up -d
 ```
 
