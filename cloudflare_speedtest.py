@@ -1721,6 +1721,9 @@ def parse_args():
   
   # 上传结果到GitHub
   python cloudflare_speedtest.py --mode beginner --upload github --repo owner/repo --token ghp_xxx
+
+  # 上传结果到GitHub Gist
+  python cloudflare_speedtest.py --mode beginner --upload gist --token ghp_xxx --gist-file cloudflare_ips.txt
         """
     )
     
@@ -1751,8 +1754,8 @@ def parse_args():
                        help='CSV文件路径（优选反代模式，默认: result.csv）')
     
     # 上传参数
-    parser.add_argument('--upload', choices=['api', 'github', 'none'], default='none',
-                       help='上传方式: api(Cloudflare Workers API), github(GitHub仓库), none(不上传)')
+    parser.add_argument('--upload', choices=['api', 'github', 'gist', 'none'], default='none',
+                       help='上传方式: api(Cloudflare Workers API), github(GitHub仓库), gist(GitHub Gist), none(不上传)')
     
     # Cloudflare Workers API参数
     parser.add_argument('--worker-domain', type=str,
@@ -1767,6 +1770,14 @@ def parse_args():
                        help='GitHub Personal Access Token（GitHub上传方式需要）')
     parser.add_argument('--file-path', type=str, default='cloudflare_ips.txt',
                        help='GitHub文件路径（默认: cloudflare_ips.txt）')
+
+    # Gist参数
+    parser.add_argument('--gist-id', type=str,
+                       help='GitHub Gist ID（可选，不提供则创建新的Gist）')
+    parser.add_argument('--gist-file', type=str, default='cloudflare_ips.txt',
+                       help='Gist文件名（默认: cloudflare_ips.txt）')
+    parser.add_argument('--gist-public', action='store_true',
+                       help='创建公开Gist（默认私有）')
     
     # 其他参数
     parser.add_argument('--upload-count', type=int, default=10,
@@ -1870,6 +1881,20 @@ def run_with_args(args):
                 else:
                     # 调用命令行模式的上传函数
                     upload_to_github_cli("result.csv", args.repo, args.token, args.file_path, args.upload_count)
+
+            elif args.upload == 'gist':
+                if not args.token:
+                    print("❌ Gist上传需要提供 --token 参数")
+                else:
+                    upload_to_gist_cli(
+                        "result.csv",
+                        github_token=args.token,
+                        gist_id=args.gist_id,
+                        gist_file=args.gist_file,
+                        upload_count=args.upload_count,
+                        public=args.gist_public
+                    )
+
         else:
             print("\n❌ 测速失败")
             return 1
@@ -1962,6 +1987,20 @@ def run_with_args(args):
                 else:
                     # 调用命令行模式的上传函数
                     upload_to_github_cli("result.csv", args.repo, args.token, args.file_path, args.upload_count)
+
+            elif args.upload == 'gist':
+                if not args.token:
+                    print("❌ Gist上传需要提供 --token 参数")
+                else:
+                    upload_to_gist_cli(
+                        "result.csv",
+                        github_token=args.token,
+                        gist_id=args.gist_id,
+                        gist_file=args.gist_file,
+                        upload_count=args.upload_count,
+                        public=args.gist_public
+                    )
+
         else:
             print("\n❌ 测速失败")
             return 1
@@ -2069,6 +2108,19 @@ def generate_cli_command(mode, ip_version, cfcolo=None, dn_count=None, speed_lim
                 cmd_parts.append(f"--file-path {upload_info['file_path']}")
             if upload_info.get("upload_count"):
                 cmd_parts.append(f"--upload-count {upload_info['upload_count']}")
+
+        elif upload_info.get("upload_method") == "gist":
+            cmd_parts.append("--upload gist")
+            if upload_info.get("github_token"):
+                cmd_parts.append(f"--token '{upload_info['github_token']}'")
+            if upload_info.get("gist_id"):
+                cmd_parts.append(f"--gist-id {upload_info['gist_id']}")
+            if upload_info.get("gist_file"):
+                cmd_parts.append(f"--gist-file {upload_info['gist_file']}")
+            if upload_info.get("upload_count"):
+                cmd_parts.append(f"--upload-count {upload_info['upload_count']}")
+            if upload_info.get("public"):
+                cmd_parts.append("--gist-public")        
     
     return " ".join(cmd_parts)
 
@@ -2724,7 +2776,7 @@ def upload_results_to_api(result_file="result.csv"):
     print("\n" + "=" * 70)
     print(" 优选结果上报功能")
     print("=" * 70)
-    print(" 此功能可以将测速结果上报到您的 Cloudflare Workers API 或 GitHub")
+    print(" 此功能可以将测速结果上报到您的 Cloudflare Workers API 、Gist与GitHub 仓库")
     print("=" * 70)
     
     # 询问是否上报
@@ -2738,19 +2790,23 @@ def upload_results_to_api(result_file="result.csv"):
     print(" 请选择上传方式")
     print("=" * 70)
     print("  1. Cloudflare Workers API")
-    print("  2. GitHub (Gist)")
+    print("  2. GitHub 仓库")
+    print("  3. GitHub Gist")
     print("=" * 70)
-    
+
     while True:
-        upload_method = input("\n请选择上传方式 [1/2]: ").strip()
+        upload_method = input("\n请选择上传方式 [1/2/3]: ").strip()
         if upload_method == "1":
             upload_info = upload_to_cloudflare_api(result_file)
             return upload_info
         elif upload_method == "2":
             upload_info = upload_to_github(result_file)
             return upload_info
+        elif upload_method == "3":
+            upload_info = upload_to_gist(result_file)
+            return upload_info
         else:
-            print("✗ 请输入 1 或 2")
+            print("✗ 请输入 1、2 或 3")   
 
 
 def upload_to_cloudflare_api(result_file="result.csv"):
@@ -3578,6 +3634,433 @@ def upload_to_github(result_file="result.csv"):
         import traceback
         traceback.print_exc()
         return None
+
+def parse_best_ips_from_csv(result_file="result.csv"):
+    """从测速结果CSV解析IP信息，供GitHub/Gist上传复用"""
+    best_ips = []
+    with open(result_file, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            ip = (row.get('IP 地址') or '').strip()
+            port = (row.get('端口') or '').strip()
+
+            speed = ''
+            for speed_key in ['下载速度(MB/s)', '下载速度 (MB/s)', '下载速度']:
+                if speed_key in row and row[speed_key] is not None:
+                    speed = str(row[speed_key]).strip()
+                    break
+
+            latency = ''
+            for latency_key in ['平均延迟', '延迟', 'latency']:
+                if latency_key in row and row[latency_key] is not None:
+                    latency = str(row[latency_key]).strip()
+                    break
+
+            region_code = (row.get('地区码') or '').strip()
+
+            if ip and ':' in ip:
+                ip_parts = ip.split(':')
+                if len(ip_parts) == 2:
+                    ip = ip_parts[0]
+                    if not port:
+                        port = ip_parts[1]
+
+            if not port:
+                port = '443'
+
+            if ip:
+                try:
+                    speed_val = float(speed) if speed else 0
+                    latency_val = latency if latency else 'N/A'
+
+                    region_name = '未知地区'
+                    if region_code and region_code in AIRPORT_CODES:
+                        region_name = AIRPORT_CODES[region_code].get('name', region_code)
+                    elif region_code:
+                        region_name = region_code
+
+                    best_ips.append({
+                        'ip': ip,
+                        'port': int(port),
+                        'speed': speed_val,
+                        'latency': latency_val,
+                        'region_code': region_code,
+                        'region_name': region_name
+                    })
+                except ValueError:
+                    continue
+
+    return best_ips
+
+
+def build_ip_text_content(best_ips, upload_count):
+    """构建上传文本内容"""
+    content_lines = []
+    for ip_info in best_ips[:upload_count]:
+        region_name = ip_info.get('region_name', '未知地区')
+        speed = ip_info['speed']
+        name = f"{region_name}-{speed:.2f}MB/s"
+        content_lines.append(f"{ip_info['ip']}:{ip_info['port']}#{name}")
+    return '\n'.join(content_lines)
+
+
+def upload_to_gist(result_file="result.csv"):
+    """交互模式：上传优选结果到 GitHub Gist"""
+    print("\n" + "=" * 70)
+    print(" GitHub Gist 上传")
+    print("=" * 70)
+    print(" 此功能可以将测速结果上传到 GitHub Gist")
+    print(" 需要提供 GitHub Personal Access Token")
+    print(" Token 需要 gist 权限；若是细粒度Token，请确保允许 Gists")
+    print("=" * 70)
+
+    if not os.path.exists(result_file):
+        print(f"❌ 未找到测速结果文件: {result_file}")
+        return None
+
+    github_token = None
+    gist_id = None
+    gist_file = "cloudflare_ips.txt"
+    gist_public = False
+
+    saved_config = load_config()
+    if saved_config:
+        saved_token = saved_config.get('gist_token', '')
+        saved_gist_id = saved_config.get('gist_id', '')
+        saved_gist_file = saved_config.get('gist_file', 'cloudflare_ips.txt')
+        saved_gist_public = saved_config.get('gist_public', False)
+        last_used = saved_config.get('gist_last_used', '未知')
+
+        if saved_token:
+            masked = saved_token[:10] + "..." + saved_token[-4:] if len(saved_token) > 14 else "***"
+            print(f"\n💾 检测到上次使用的Gist配置:")
+            print(f"   Token: {masked}")
+            print(f"   Gist ID: {saved_gist_id or '未设置（创建新Gist）'}")
+            print(f"   文件名: {saved_gist_file}")
+            print(f"   可见性: {'公开' if saved_gist_public else '私有'}")
+            print(f"   上次使用: {last_used}")
+            print("\n是否使用上次的配置？")
+            print("  1. 是 - 使用上次配置")
+            print("  2. 否 - 输入新的配置")
+            print("  3. 清除配置")
+
+            while True:
+                config_choice = input("\n请选择 [1/2/3]: ").strip()
+                if config_choice == "1":
+                    github_token = saved_token
+                    gist_id = saved_gist_id
+                    gist_file = saved_gist_file
+                    gist_public = saved_gist_public
+                    break
+                elif config_choice == "2":
+                    break
+                elif config_choice == "3":
+                    try:
+                        if os.path.exists(CONFIG_FILE):
+                            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                                config = json.load(f)
+                            for k in ['gist_token', 'gist_id', 'gist_file', 'gist_public', 'gist_last_used']:
+                                config.pop(k, None)
+                            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                                json.dump(config, f, ensure_ascii=False, indent=2)
+                        print("✅ 已清除保存的Gist配置")
+                    except Exception as e:
+                        print(f"⚠️  清除Gist配置失败: {e}")
+                    break
+                else:
+                    print("✗ 请输入 1、2 或 3")
+
+    if not github_token:
+        print("\n📝 请输入 GitHub Personal Access Token")
+        print("提示: classic token 需要 gist 权限")
+        github_token = input("\nGitHub Token: ").strip()
+        if not github_token:
+            print("❌ Token 不能为空")
+            return None
+
+        gist_id_input = input("Gist ID [留空则创建新的Gist]: ").strip()
+        if gist_id_input:
+            gist_id = gist_id_input
+
+        gist_file_input = input("Gist文件名 [默认: cloudflare_ips.txt]: ").strip()
+        if gist_file_input:
+            gist_file = gist_file_input
+
+        public_choice = input("是否创建公开Gist？[y/N]: ").strip().lower()
+        gist_public = public_choice in ['y', 'yes']
+
+        save_choice = input("\n是否保存此配置供下次使用？[Y/n]: ").strip().lower()
+        if save_choice not in ['n', 'no']:
+            try:
+                existing_config = {}
+                if os.path.exists(CONFIG_FILE):
+                    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                        existing_config = json.load(f)
+                existing_config["gist_token"] = github_token
+                existing_config["gist_id"] = gist_id or ""
+                existing_config["gist_file"] = gist_file
+                existing_config["gist_public"] = gist_public
+                existing_config["gist_last_used"] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(existing_config, f, ensure_ascii=False, indent=2)
+                print("✅ Gist配置已保存")
+            except Exception as e:
+                print(f"⚠️  Gist配置保存失败: {e}")
+
+    print("\n📊 正在读取测速结果...")
+    try:
+        best_ips = parse_best_ips_from_csv(result_file)
+        if not best_ips:
+            print("❌ 未找到有效的测速结果")
+            return None
+
+        print(f"✅ 找到 {len(best_ips)} 个测速结果")
+
+        while True:
+            count_input = input(f"\n请输入要上传的IP数量 [默认: 10, 最多: {len(best_ips)}]: ").strip()
+            if not count_input:
+                upload_count = min(10, len(best_ips))
+                break
+            try:
+                upload_count = int(count_input)
+                if upload_count <= 0:
+                    print("✗ 请输入大于0的数字")
+                    continue
+                if upload_count > len(best_ips):
+                    print(f"⚠️  最多只能上传 {len(best_ips)} 个结果")
+                    upload_count = len(best_ips)
+                break
+            except ValueError:
+                print("✗ 请输入有效的数字")
+
+        print(f"\n将上传以下 {upload_count} 个优选IP:")
+        print("-" * 70)
+        for i, ip_info in enumerate(best_ips[:upload_count], 1):
+            region_display = ip_info.get('region_name') or '未知地区'
+            print(f"  {i:2d}. {ip_info['ip']:15s}:{ip_info['port']:<5d} - {ip_info['speed']:.2f} MB/s - {region_display} - 延迟: {ip_info['latency']}")
+        print("-" * 70)
+
+        confirm = input("\n确认上传以上IP到Gist？[Y/n]: ").strip().lower()
+        if confirm in ['n', 'no']:
+            print("取消上传")
+            return None
+
+        content = build_ip_text_content(best_ips, upload_count)
+        description = f"Cloudflare优选IP列表 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+
+        if gist_id:
+            print("\n🚀 正在更新现有 Gist...")
+            api_url = f"https://api.github.com/gists/{gist_id}"
+            payload = {
+                "description": description,
+                "files": {
+                    gist_file: {
+                        "content": content
+                    }
+                }
+            }
+            try:
+                try:
+                    response = requests.patch(api_url, json=payload, headers=headers, timeout=30)
+                except ImportError as e:
+                    if "SSL module is not available" in str(e):
+                        response = curl_request(api_url, method='PATCH', data=payload, headers=headers, timeout=30)
+                    else:
+                        raise
+            except Exception as e:
+                print(f"❌ 更新Gist失败: {e}")
+                return None
+        else:
+            print("\n🚀 正在创建新的 Gist...")
+            api_url = "https://api.github.com/gists"
+            payload = {
+                "description": description,
+                "public": gist_public,
+                "files": {
+                    gist_file: {
+                        "content": content
+                    }
+                }
+            }
+            try:
+                try:
+                    response = requests.post(api_url, json=payload, headers=headers, timeout=30)
+                except ImportError as e:
+                    if "SSL module is not available" in str(e):
+                        response = curl_request(api_url, method='POST', data=payload, headers=headers, timeout=30)
+                    else:
+                        raise
+            except Exception as e:
+                print(f"❌ 创建Gist失败: {e}")
+                return None
+
+        if response and response.status_code in [200, 201]:
+            result = response.json()
+            new_gist_id = result.get("id", gist_id or "")
+            html_url = result.get("html_url", "")
+            files = result.get("files", {})
+            raw_url = ""
+            if gist_file in files:
+                raw_url = files[gist_file].get("raw_url", "")
+
+            print("\n" + "=" * 70)
+            print(" ✅ Gist 上传成功！")
+            print("=" * 70)
+            print(f"  Gist ID: {new_gist_id}")
+            if html_url:
+                print(f"  页面地址: {html_url}")
+            if raw_url:
+                print(f"  原始文件地址: {raw_url}")
+            print(f"  上传数量: {upload_count} 个IP")
+            print(f"  文件名: {gist_file}")
+            print(f"  可见性: {'公开' if result.get('public', gist_public) else '私有'}")
+            print("=" * 70)
+
+            return {
+                "upload_method": "gist",
+                "github_token": github_token,
+                "gist_id": new_gist_id,
+                "gist_file": gist_file,
+                "upload_count": upload_count,
+                "public": result.get('public', gist_public)
+            }
+
+        elif response and response.status_code == 401:
+            print("❌ 认证失败，请检查 Token 是否正确以及是否具备 gist 权限")
+        elif response and response.status_code == 404:
+            print("❌ Gist 不存在或无权限访问，请检查 gist_id")
+        else:
+            print(f"❌ Gist上传失败 (HTTP {response.status_code if response else 'N/A'})")
+            try:
+                error_detail = response.json()
+                print(f"   错误详情: {error_detail}")
+            except:
+                pass
+
+        return None
+
+    except Exception as e:
+        print(f"❌ 读取测速结果失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def upload_to_gist_cli(result_file="result.csv", github_token=None, gist_id=None, gist_file="cloudflare_ips.txt", upload_count=10, public=False):
+    """命令行模式：上传优选结果到 GitHub Gist"""
+    print("\n" + "=" * 70)
+    print(" 命令行模式：GitHub Gist 上传")
+    print("=" * 70)
+
+    if not os.path.exists(result_file):
+        print(f"❌ 未找到测速结果文件: {result_file}")
+        return
+
+    try:
+        best_ips = parse_best_ips_from_csv(result_file)
+        if not best_ips:
+            print("❌ 未找到有效的测速结果")
+            return
+
+        upload_count = min(upload_count, len(best_ips))
+        print(f"✅ 找到 {len(best_ips)} 个测速结果，将上传前 {upload_count} 个")
+
+        content = build_ip_text_content(best_ips, upload_count)
+        description = f"Cloudflare优选IP列表 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+
+        if gist_id:
+            print("🚀 正在更新现有 Gist...")
+            api_url = f"https://api.github.com/gists/{gist_id}"
+            payload = {
+                "description": description,
+                "files": {
+                    gist_file: {
+                        "content": content
+                    }
+                }
+            }
+            try:
+                try:
+                    response = requests.patch(api_url, json=payload, headers=headers, timeout=30)
+                except ImportError as e:
+                    if "SSL module is not available" in str(e):
+                        response = curl_request(api_url, method='PATCH', data=payload, headers=headers, timeout=30)
+                    else:
+                        raise
+            except Exception as e:
+                print(f"❌ 更新Gist失败: {e}")
+                return
+        else:
+            print("🚀 正在创建新的 Gist...")
+            api_url = "https://api.github.com/gists"
+            payload = {
+                "description": description,
+                "public": public,
+                "files": {
+                    gist_file: {
+                        "content": content
+                    }
+                }
+            }
+            try:
+                try:
+                    response = requests.post(api_url, json=payload, headers=headers, timeout=30)
+                except ImportError as e:
+                    if "SSL module is not available" in str(e):
+                        response = curl_request(api_url, method='POST', data=payload, headers=headers, timeout=30)
+                    else:
+                        raise
+            except Exception as e:
+                print(f"❌ 创建Gist失败: {e}")
+                return
+
+        if response and response.status_code in [200, 201]:
+            result = response.json()
+            new_gist_id = result.get("id", gist_id or "")
+            html_url = result.get("html_url", "")
+            files = result.get("files", {})
+            raw_url = ""
+            if gist_file in files:
+                raw_url = files[gist_file].get("raw_url", "")
+
+            print("\n" + "=" * 70)
+            print(" ✅ Gist 上传成功！")
+            print("=" * 70)
+            print(f"  Gist ID: {new_gist_id}")
+            if html_url:
+                print(f"  页面地址: {html_url}")
+            if raw_url:
+                print(f"  原始文件地址: {raw_url}")
+            print(f"  上传数量: {upload_count} 个IP")
+            print(f"  文件名: {gist_file}")
+            print(f"  可见性: {'公开' if result.get('public', public) else '私有'}")
+            print("=" * 70)
+        elif response and response.status_code == 401:
+            print("❌ 认证失败，请检查 Token 是否正确以及是否具备 gist 权限")
+        elif response and response.status_code == 404:
+            print("❌ Gist 不存在或无权限访问，请检查 gist_id")
+        else:
+            print(f"❌ Gist上传失败 (HTTP {response.status_code if response else 'N/A'})")
+            try:
+                error_detail = response.json()
+                print(f"   错误详情: {error_detail}")
+            except:
+                pass
+
+    except Exception as e:
+        print(f"❌ 读取测速结果或上传失败: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def upload_to_cloudflare_api_cli(result_file="result.csv", worker_domain=None, uuid=None, upload_count=10, clear_existing=False):
