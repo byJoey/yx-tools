@@ -116,14 +116,23 @@ docker compose up -d
 
 ## 定时任务
 
-命令行模式适合塞进 cron：
+Linux / macOS 直接用内置命令挂 cron，不用自己编辑 crontab：
 
 ```bash
 # 每 6 小时测一次并上报
-0 */6 * * * cd /opt/yx && ./yx test -n 10 -sl 2 -upload api -domain your.workers.dev -uuid 你的UUID -clear
+./yx cron -add "test -n 10 -sl 2 -upload api -clear" -at "0 */6 * * *"
+
+# 看已登记的任务
+./yx cron
+
+# 清掉（只删本程序加的，不动你自己的任务）
+./yx cron -remove
 ```
 
-配置会存在二进制同目录的 `yx-config.json`，填过一次之后命令里可以省掉 `-domain` `-uuid`。
+配置存在二进制同目录的 `yx-config.json`，`-domain` `-uuid` 填过一次之后命令里就能省掉。
+任务输出写到程序目录的 `yx-cron.log`。
+
+Windows 用「任务计划程序」调用 `yx.exe test ...` 即可。
 
 ## 文件
 
@@ -133,6 +142,7 @@ docker compose up -d
 - `ips_ports.txt` — 反代列表，`IP:端口` 一行一条
 - `yx-config.json` — 配置，含 Token，注意别泄露
 - `Cloudflare.txt` / `Cloudflare_ipv6.txt` — 缓存的官方 IP 段
+- `yx-cron.log` — 定时任务的输出（设了定时任务才有）
 
 ## 相关
 
