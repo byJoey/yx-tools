@@ -8,8 +8,8 @@ dist/
 data/
 
 # 编译产物
-yx
-yx_*
+/yx
+/yx_*
 *.exe
 
 # 系统
