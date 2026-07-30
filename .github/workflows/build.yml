@@ -1,0 +1,75 @@
+name: 构建
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 交叉编译全平台
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: 检查
+        run: |
+          go vet ./...
+          go build ./...
+
+      - name: 编译
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [ -z "$VERSION" ] && VERSION=dev
+          mkdir -p dist
+          build() {
+            local os=$1 arch=$2 ext=$3
+            echo "→ $os/$arch"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch \
+              go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+              -o "dist/yx_${os}_${arch}${ext}" ./cmd/yx
+          }
+          build linux   amd64 ''
+          build linux   arm64 ''
+          build linux   386   ''
+          build darwin  amd64 ''
+          build darwin  arm64 ''
+          build windows amd64 '.exe'
+          build windows arm64 '.exe'
+          build freebsd amd64 ''
+          ls -lh dist/
+
+      - name: 打包
+        run: |
+          cd dist
+          for f in yx_*; do
+            case "$f" in
+              *.exe) zip -q "${f%.exe}.zip" "$f" ;;
+              *)     tar -czf "$f.tar.gz" "$f" ;;
+            esac
+          done
+          sha256sum yx_* > checksums.txt
+          ls -lh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yx-binaries
+          path: dist/*
+
+      - name: 发布 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+          generate_release_notes: true

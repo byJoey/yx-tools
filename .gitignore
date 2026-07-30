@@ -1,0 +1,16 @@
+# 运行产物
+result.csv
+ips_ports.txt
+yx-config.json
+Cloudflare.txt
+Cloudflare_ipv6.txt
+dist/
+data/
+
+# 编译产物
+yx
+yx_*
+*.exe
+
+# 系统
+.DS_Store

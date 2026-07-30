@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cloudflare 优选测速</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="dot" id="statusDot"></span>
+    <strong>Cloudflare 优选测速</strong>
+  </div>
+  <div class="topbar-right">
+    <span class="stat" id="statResult">结果 0</span>
+    <button class="btn ghost" id="btnConfig" title="上报配置">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.34.2.7.19 1.06z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- 参数面板 -->
+  <aside class="panel">
+    <div class="field">
+      <label>地区（机场码）</label>
+      <div class="colo-box">
+        <input type="text" id="coloSearch" placeholder="搜索城市或代码，留空测全部" autocomplete="off">
+        <div class="colo-list" id="coloList"></div>
+      </div>
+      <div class="chips" id="coloChips"></div>
+    </div>
+
+    <div class="field">
+      <label>IP 版本</label>
+      <div class="seg" id="segIPv">
+        <button class="on" data-v="4">IPv4</button>
+        <button data-v="6">IPv6</button>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="field">
+        <label>测速数量</label>
+        <input type="number" id="inCount" value="10" min="1" max="100">
+      </div>
+      <div class="field">
+        <label>端口</label>
+        <input type="number" id="inPort" value="443" min="1" max="65535">
+      </div>
+      <div class="field">
+        <label>速度下限 MB/s</label>
+        <input type="number" id="inSpeed" value="1" min="0" step="0.5">
+      </div>
+      <div class="field">
+        <label>延迟上限 ms</label>
+        <input type="number" id="inDelay" value="1000" min="1">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>延迟测速线程 <span class="hint" id="threadVal">200</span></label>
+      <input type="range" id="inThread" min="10" max="1000" step="10" value="200">
+    </div>
+
+    <details class="more">
+      <summary>更多选项</summary>
+      <div class="field">
+        <label>测速地址</label>
+        <input type="text" id="inURL" placeholder="留空用默认（走 Cloudflare 的大文件）">
+      </div>
+      <div class="field">
+        <label>自定义 IP 段（每行一条，支持 IP:端口）</label>
+        <textarea id="inIPText" rows="4" placeholder="留空则自动获取 Cloudflare 官方 IP 段"></textarea>
+      </div>
+      <label class="check"><input type="checkbox" id="inNoDL"> 只测延迟，跳过下载测速</label>
+      <label class="check"><input type="checkbox" id="inAll"> 测速全部 IP（慢）</label>
+    </details>
+
+    <div class="actions">
+      <button class="btn primary" id="btnStart">
+        <svg viewBox="0 0 24 24" class="ico"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        开始测速
+      </button>
+      <button class="btn danger hidden" id="btnStop">
+        <svg viewBox="0 0 24 24" class="ico"><rect x="6" y="6" width="12" height="12"/></svg>
+        停止
+      </button>
+    </div>
+  </aside>
+
+  <!-- 结果区 -->
+  <section class="content">
+    <div class="progress" id="progressBar"><i id="progressFill"></i></div>
+    <div class="statusline">
+      <span id="statusText">就绪，配置左侧参数后开始</span>
+    </div>
+
+    <div class="toolbar">
+      <input type="text" id="filterText" placeholder="筛选 IP 或地区" autocomplete="off">
+      <span class="spacer"></span>
+      <button class="btn ghost" id="btnProxy" title="生成 ips_ports.txt">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        反代列表
+      </button>
+      <button class="btn ghost" id="btnUploadAPI" title="上报到 Worker">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        上报 Worker
+      </button>
+      <button class="btn ghost" id="btnUploadGH" title="上传到 GitHub">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+        GitHub
+      </button>
+    </div>
+
+    <div class="table-wrap">
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th class="c-idx">#</th>
+            <th data-sort="ip">IP</th>
+            <th class="c-num" data-sort="port">端口</th>
+            <th class="c-num" data-sort="delay">延迟</th>
+            <th class="c-num" data-sort="speed">速度</th>
+            <th class="c-num" data-sort="loss">丢包</th>
+            <th data-sort="colo">地区</th>
+            <th class="c-act"></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="emptyBox">还没有测速结果</div>
+    </div>
+  </section>
+</main>
+
+<!-- 配置弹窗 -->
+<div class="mask hidden" id="mask">
+  <div class="modal">
+    <h3>上报配置</h3>
+    <div class="field">
+      <label>Worker 域名</label>
+      <input type="text" id="cfgDomain" placeholder="example.workers.dev">
+    </div>
+    <div class="field">
+      <label>UUID 或自定义路径</label>
+      <input type="text" id="cfgUUID" placeholder="访问面板用的那串">
+    </div>
+    <hr>
+    <div class="field">
+      <label>GitHub 仓库</label>
+      <input type="text" id="cfgRepo" placeholder="owner/repo">
+    </div>
+    <div class="field">
+      <label>GitHub Token <span class="hint" id="tokenHint"></span></label>
+      <input type="password" id="cfgToken" placeholder="留空则沿用已保存的">
+    </div>
+    <div class="field">
+      <label>仓库内文件路径</label>
+      <input type="text" id="cfgPath" placeholder="cloudflare_ips.txt">
+    </div>
+    <div class="field">
+      <label>上报数量</label>
+      <input type="number" id="cfgLimit" value="10" min="1" max="100">
+    </div>
+    <label class="check"><input type="checkbox" id="cfgClear" checked> 上报前清空 Worker 已有 IP</label>
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnCfgClose">取消</button>
+      <button class="btn primary" id="btnCfgSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<script src="/app.js"></script>
+</body>
+</html>

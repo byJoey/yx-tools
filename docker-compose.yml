@@ -1,31 +1,11 @@
-version: '3.8'
-
 services:
-  cloudflare-speedtest:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: cloudflare-speedtest:latest
-    container_name: cloudflare-speedtest
-    # 挂载数据目录，保存结果文件
-    volumes:
-      - ./data:/app/data
-      # 可选：挂载配置文件目录
-      - ./config:/app/config
-    # 网络模式
-    network_mode: bridge
-    # 环境变量
-    environment:
-      - TZ=Asia/Shanghai
-      - PYTHONUNBUFFERED=1
-      # 定时任务配置（可选）
-      # - CRON_SCHEDULE=0 2 * * *  # 每天凌晨2点
-      # - CRON_COMMAND=python3 /app/cloudflare_speedtest.py --mode beginner --count 10 --speed 1 --delay 1000
-    # 保持容器运行（用于定时任务）
-    stdin_open: true
-    tty: true
-    # 重启策略
+  yx:
+    build: .
+    image: yx-tools:latest
+    container_name: yx-tools
     restart: unless-stopped
-    # 工作目录
-    working_dir: /app
-
+    ports:
+      - "8080:8080"
+    volumes:
+      # 测速结果与配置持久化
+      - ./data:/data
