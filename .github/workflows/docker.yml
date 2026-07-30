@@ -62,11 +62,15 @@ jobs:
           tags: |
             type=ref,event=branch
             type=ref,event=pr
+            type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
+          # tag 不符合 semver 时（如 v3）不让整步失败
+          flavor: |
+            latest=auto
 
       - name: 构建并推送 Docker 镜像（多架构）
         uses: docker/build-push-action@v5
@@ -91,8 +95,6 @@ jobs:
           echo "  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
           echo ""
           echo "🚀 运行容器:"
-          echo "  docker run -it --rm \\"
-          echo "    -v \$(pwd)/data:/app/data \\"
-          echo "    -v \$(pwd)/config:/app/config \\"
+          echo "  docker run -d -p 8080:8080 \\"
+          echo "    -v \$(pwd)/data:/data \\"
           echo "    ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-
