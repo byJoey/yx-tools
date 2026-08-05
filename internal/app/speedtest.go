@@ -43,6 +43,8 @@ type Options struct {
 	TestURL    string  `json:"test_url"`    // 下载测速地址
 	IPFile     string  `json:"ip_file"`     // 自定义 IP 文件；为空则按 IPv6 选项自动下载
 	IPText     string  `json:"ip_text"`     // 直接指定 IP 段，优先于 IPFile
+	SampleSize int     `json:"sample_size"` // 参与延迟测速的候选 IP 数量，0 表示不限
+	HTTPing    bool    `json:"httping"`     // 用真实 HTTP 请求测延迟（含 TLS 与服务端响应）
 	DisableDL  bool    `json:"disable_dl"`  // 只测延迟，跳过下载测速
 	TestAll    bool    `json:"test_all"`    // 测速全部 IP
 	Verbose    bool    `json:"-"`           // 是否让测速内核输出自己的进度条
@@ -92,6 +94,20 @@ func (o *Options) Normalize() {
 	if o.TestURL == "" {
 		o.TestURL = DefaultTestURL
 	}
+	if strings.TrimSpace(o.Colo) != "" {
+		o.HTTPing = true
+	}
+	if o.SampleSize < 0 {
+		o.SampleSize = 0
+	}
+	// 勾了「测速全部 IP」就是要穷举，抽样会自相矛盾
+	if o.TestAll {
+		o.SampleSize = 0
+	}
+	// 候选数少于要出的结果数没有意义
+	if o.SampleSize > 0 && o.SampleSize < o.Count {
+		o.SampleSize = o.Count
+	}
 }
 
 // Run 执行一次完整测速。report 可为 nil。
@@ -127,12 +143,14 @@ func Run(ctx context.Context, o Options, report func(Progress)) ([]Result, error
 	task.MinSpeed = o.SpeedLimit
 	task.Disable = o.DisableDL
 	task.TestAll = o.TestAll
+	task.SampleSize = o.SampleSize
 	task.IPFile = ipFile
 	task.IPText = o.IPText
 	task.PortMapping = make(map[string]int)
 
 	colo := strings.TrimSpace(o.Colo)
-	task.Httping = colo != ""
+	// 地区码只能从 HTTP 响应头里拿，选了地区就必须走 HTTPing
+	task.Httping = o.HTTPing || colo != ""
 	task.HttpingCFColo = colo
 	utils.InputMaxDelay = time.Duration(o.DelayLimit) * time.Millisecond
 	utils.InputMinDelay = 0
@@ -140,6 +158,8 @@ func Run(ctx context.Context, o Options, report func(Progress)) ([]Result, error
 	utils.PrintNum = 0 // 结果由本程序输出，禁用内核自身打印
 
 	task.InitRandSeed()
+	task.SetContext(ctx)
+	defer task.SetContext(nil)
 
 	if colo == "" {
 		emit(Progress{Stage: "ping", Message: "正在测试延迟"})

@@ -21,6 +21,8 @@ var (
 	IPText string
 	// PortMapping stores IP to port mapping for proxy mode
 	PortMapping = make(map[string]int)
+	// SampleSize 限制参与延迟测速的候选 IP 数量，0 表示不限
+	SampleSize = 0
 )
 
 func InitRandSeed() {
@@ -204,5 +206,20 @@ func loadIPRanges() []*net.IPAddr {
 			}
 		}
 	}
-	return ranges.ips
+	return sampleIPs(ranges.ips)
+}
+
+// sampleIPs 在候选 IP 超过 SampleSize 时随机抽样。
+// 用随机而非按序截取，是因为官方 IP 段按地区排列，
+// 顺序截取会让结果永远集中在前几个段上。
+func sampleIPs(ips []*net.IPAddr) []*net.IPAddr {
+	if SampleSize <= 0 || len(ips) <= SampleSize {
+		return ips
+	}
+	// 部分 Fisher-Yates：只洗出前 SampleSize 个即可
+	for i := 0; i < SampleSize; i++ {
+		j := i + rand.Intn(len(ips)-i)
+		ips[i], ips[j] = ips[j], ips[i]
+	}
+	return ips[:SampleSize]
 }

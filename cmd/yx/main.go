@@ -40,7 +40,10 @@ const usage = `Cloudflare 优选 IP 测速工具 v%s
   -t      延迟测速线程数（默认 200，最大 1000）
   -port   测速端口（默认 443）
   -url    测速地址
-  -f      自定义 IP 文件（支持 IP:端口 每行一条）
+  -f      自定义 IP 文件（支持 IP:端口 每行一条）；留空自动用 Cloudflare 官方 IP 段
+  -c      参与延迟测速的候选 IP 数量，从官方段里随机抽（默认 0 不限，约 6000 个）
+  -all    穷举每个网段的全部 IP（很慢，会忽略 -c）
+  -http   用真实 HTTP 请求测延迟（含 TLS 握手与服务端响应），比 TCP 握手准
   -nodl   只测延迟，跳过下载测速
   -o      结果输出文件（默认 result.csv）
 
@@ -200,6 +203,9 @@ func runTest(args []string) {
 	port := fs.Int("port", 443, "测速端口")
 	url := fs.String("url", "", "测速地址")
 	ipFile := fs.String("f", "", "自定义 IP 文件")
+	sample := fs.Int("c", 0, "候选 IP 数量，0 表示不限")
+	testAll := fs.Bool("all", false, "穷举全部 IP")
+	httping := fs.Bool("http", false, "用真实 HTTP 请求测延迟")
 	noDL := fs.Bool("nodl", false, "只测延迟")
 	out := fs.String("o", app.ResultFile, "结果输出文件")
 	uf := bindUploadFlags(fs)
@@ -209,6 +215,7 @@ func runTest(args []string) {
 		Colo: *colo, IPv6: *ipv6, Count: *count,
 		SpeedLimit: *speed, DelayLimit: *delay, Threads: *threads,
 		Port: *port, TestURL: *url, IPFile: *ipFile, DisableDL: *noDL,
+		SampleSize: *sample, TestAll: *testAll, HTTPing: *httping,
 		Verbose: true,
 	}
 
