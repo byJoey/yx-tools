@@ -231,7 +231,9 @@ async function start() {
 }
 
 // ── 配置弹窗 ──────────────────────────────────────
-async function loadConfig() {
+// uploadOnly 为真时只刷新上报设置：保存配置后不该把左侧
+// 用户刚调好的测速参数冲回上一次的值。
+async function loadConfig(uploadOnly) {
   try {
     const c = await api('/api/config');
     $('#cfgDomain').value = c.worker_domain || '';
@@ -240,6 +242,7 @@ async function loadConfig() {
     $('#cfgPath').value = c.github_path || 'cloudflare_ips.txt';
     state.hasToken = !!c.has_github_token;
     $('#tokenHint').textContent = state.hasToken ? '已保存' : '';
+    if (uploadOnly) return;
     // 回填上次的测速参数
     if (c.count) $('#inCount').value = c.count;
     if (c.speed_limit != null) $('#inSpeed').value = c.speed_limit;
@@ -283,7 +286,7 @@ async function saveConfig() {
     $('#cfgToken').value = '';
     $('#mask').classList.add('hidden');
     toast('配置已保存', 'ok');
-    loadConfig();
+    loadConfig(true);
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -513,26 +516,87 @@ async function loadCron() {
   }
 }
 
+// 命令行里带空格的值要加引号，否则 crontab 会把它拆成两段
+function cronQuote(v) {
+  return /[\s"']/.test(v) ? "'" + String(v).replace(/'/g, "'\\''") + "'" : v;
+}
+
+// 把当前界面上的选择翻译成一条等效的 CLI 命令，
+// 定时跑出来的结果才和手点「开始测速」一致。
+function buildCronArgs() {
+  const parts = ['test'];
+  const push = (flag, val) => { parts.push(flag, cronQuote(String(val))); };
+
+  if (state.picked.length) push('-colo', state.picked.join(','));
+  if ($('#segIPv button.on').dataset.v === '6') parts.push('-ipv6');
+  push('-n', +$('#inCount').value || 10);
+
+  const port = +$('#inPort').value || 443;
+  if (port !== 443) push('-port', port);
+
+  const sl = $('#inSpeed').value.trim();
+  if (sl !== '') push('-sl', sl);
+  const tl = +$('#inDelay').value;
+  if (tl > 0) push('-tl', tl);
+  const th = +$('#inThread').value;
+  if (th > 0 && th !== 200) push('-t', th);
+
+  // 候选数量：「全部」档是穷举，其余是抽样上限
+  if ($('#segPool button[data-pool="0"]').classList.contains('on')) {
+    parts.push('-all');
+  } else if (state.pool > 0) {
+    push('-c', state.pool);
+  }
+
+  if (state.httping) parts.push('-http');
+  if (state.noDL) parts.push('-nodl');
+
+  // 测速地址与默认值相同就不写了，命令太长反而看不清
+  const url = $('#inURL').value.trim();
+  if (url && url !== state.system.default_url) push('-url', url);
+
+  // 定时跑通常是为了自动上报，带上已填好的目标
+  const domain = $('#cfgDomain').value.trim();
+  const uuid = $('#cfgUUID').value.trim();
+  const repo = $('#cfgRepo').value.trim();
+  const limit = +$('#cfgLimit').value || 0;
+  if (domain && uuid) {
+    parts.push('-upload', 'api');
+    push('-domain', domain);
+    push('-uuid', uuid);
+    if (limit > 0) push('-limit', limit);
+    if ($('#cfgClear').checked) parts.push('-clear');
+  } else if (repo && state.hasToken) {
+    parts.push('-upload', 'github');
+    push('-repo', repo);
+    const path = $('#cfgPath').value.trim();
+    if (path) push('-path', path);
+    if (limit > 0) push('-limit', limit);
+  }
+  return parts.join(' ');
+}
+
 function openCron() {
   if (!state.system.cron_supported) {
     toast('当前系统没有 crontab，请用系统自带的计划任务', 'err');
     return;
   }
-  if (!$('#cronArgs').value.trim()) {
-    // 用当前左侧参数拼一条命令，省得手打
-    const parts = ['test', '-n', String(+$('#inCount').value || 10)];
-    const sl = $('#inSpeed').value.trim();
-    if (sl) parts.push('-sl', sl);
-    if (state.picked.length) parts.push('-colo', state.picked.join(','));
-    $('#cronArgs').value = parts.join(' ');
+  // 每次打开都按当前选择重新生成，除非用户手改过
+  if (!$('#cronArgs').dataset.edited) {
+    $('#cronArgs').value = buildCronArgs();
   }
+  // 自定义 IP 段是界面里的文本，命令行只认文件，说清楚免得以为带上了
+  $('#cronArgsNote').textContent = $('#inIPText').value.trim()
+    ? '按左侧当前设置生成。自定义 IP 段没法写进命令，需要自己加 -f 文件路径'
+    : '按左侧当前设置生成，可以直接改';
   $('#cronMask').classList.remove('hidden');
   loadCron();
 }
 
 async function addCron() {
   const schedule = $('#cronSchedule').value.trim();
-  const args = $('#cronArgs').value.trim();
+  // 文本域里可能有换行，crontab 一行只能放一条命令
+  const args = $('#cronArgs').value.replace(/\s+/g, ' ').trim();
   if (!schedule) { toast('请选择或填写执行频率', 'err'); return; }
   if (!args) { toast('请填写命令参数', 'err'); return; }
   try {
@@ -643,6 +707,16 @@ async function removeCron() {
   $('#btnCronClose').onclick = () => $('#cronMask').classList.add('hidden');
   $('#cronMask').onclick = e => { if (e.target === $('#cronMask')) $('#cronMask').classList.add('hidden'); };
   $('#btnCronAdd').onclick = addCron;
+  $('#cronArgs').addEventListener('input', e => {
+    e.target.dataset.edited = e.target.value.trim() ? '1' : '';
+    $('#btnCronSync').classList.toggle('hidden', !e.target.dataset.edited);
+  });
+  $('#btnCronSync').onclick = () => {
+    $('#cronArgs').value = buildCronArgs();
+    delete $('#cronArgs').dataset.edited;
+    $('#btnCronSync').classList.add('hidden');
+    toast('已按当前设置重新生成', 'ok');
+  };
   $('#btnCronRemove').onclick = removeCron;
   document.querySelectorAll('#cronPresets button').forEach(b => {
     b.onclick = () => {

@@ -134,6 +134,7 @@ em.note{font-style:normal;font-size:11.5px;color:var(--faint);line-height:1.45;
 .btn.sm{padding:5px 9px;font-size:12px}
 
 /* 定时任务 */
+#cronArgs{font-family:var(--mono);font-size:12px;line-height:1.5}
 .cron-list{display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto}
 .cron-item{display:flex;align-items:center;gap:9px;background:var(--panel2);
   border:1px solid var(--line);border-radius:5px;padding:7px 9px;font-size:12px}

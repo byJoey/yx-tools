@@ -268,8 +268,11 @@
       <input type="text" id="cronSchedule" placeholder="0 */6 * * *" autocomplete="off">
     </div>
     <div class="field">
-      <label>执行的命令参数</label>
-      <input type="text" id="cronArgs" placeholder="test -n 10 -sl 2" autocomplete="off">
+      <label>执行的命令参数
+        <button class="btn ghost sm hidden" id="btnCronSync" title="按当前左侧设置重新生成">重新生成</button>
+      </label>
+      <textarea id="cronArgs" rows="3" placeholder="test -n 10 -sl 2" spellcheck="false"></textarea>
+      <em class="note" id="cronArgsNote">按左侧当前设置生成，可以直接改</em>
     </div>
     <label class="check"><input type="checkbox" id="cronReplace" checked> 添加前先清掉本工具已有的任务</label>
     <div class="modal-actions">
