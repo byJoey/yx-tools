@@ -2,7 +2,6 @@ package task
 
 import (
 	"bufio"
-	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -73,7 +72,7 @@ func (r *IPRanges) fixIP(ip string) string {
 func (r *IPRanges) parseCIDR(ip string) {
 	var err error
 	if r.firstIP, r.ipNet, err = net.ParseCIDR(r.fixIP(ip)); err != nil {
-		log.Fatalln("ParseCIDR err", err)
+		fatalf("IP 段格式不对: %s", ip)
 	}
 }
 
@@ -173,7 +172,7 @@ func loadIPRanges() []*net.IPAddr {
 		}
 		file, err := os.Open(IPFile)
 		if err != nil {
-			log.Fatal(err)
+			fatalf("打开 IP 文件失败: %v", err)
 		}
 		defer file.Close()
 		scanner := bufio.NewScanner(file)

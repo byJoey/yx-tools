@@ -101,7 +101,7 @@ func (o *Options) Normalize() {
 		o.SampleSize = 0
 		o.TestAll = false
 		if o.IPFile == "" && o.IPText == "" {
-			o.IPFile = ProxyListFile
+			o.IPFile = DataPath(ProxyListFile)
 		}
 	}
 	if strings.TrimSpace(o.Colo) != "" {
@@ -121,9 +121,21 @@ func (o *Options) Normalize() {
 }
 
 // Run 执行一次完整测速。report 可为 nil。
-func Run(ctx context.Context, o Options, report func(Progress)) ([]Result, error) {
+func Run(ctx context.Context, o Options, report func(Progress)) (rs []Result, err error) {
 	runMu.Lock()
 	defer runMu.Unlock()
+
+	// 内核遇到无法继续的输入会 panic（原本是 log.Fatal 直接退进程），
+	// 在这里收成普通错误，Web 服务不至于被一个错文件名带走
+	defer func() {
+		if r := recover(); r != nil {
+			if fe, ok := r.(*task.FatalError); ok {
+				rs, err = nil, errors.New(fe.Msg)
+				return
+			}
+			panic(r)
+		}
+	}()
 
 	o.Normalize()
 	utils.SetQuiet(!o.Verbose)
@@ -263,8 +275,9 @@ func ensureIPFile(ctx context.Context, ipv6 bool) (string, error) {
 	if ipv6 {
 		name, url = IPv6File, CloudflareIPv6
 	}
-	if st, err := os.Stat(name); err == nil && st.Size() > 0 {
-		return name, nil
+	path := DataPath(name)
+	if st, err := os.Stat(path); err == nil && st.Size() > 0 {
+		return path, nil
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -279,7 +292,7 @@ func ensureIPFile(ctx context.Context, ipv6 bool) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("下载 IP 段失败: HTTP %d", resp.StatusCode)
 	}
-	f, err := os.Create(name)
+	f, err := os.Create(path)
 	if err != nil {
 		return "", err
 	}
@@ -296,7 +309,7 @@ func ensureIPFile(ctx context.Context, ipv6 bool) (string, error) {
 	if err := sc.Err(); err != nil {
 		return "", err
 	}
-	return name, w.Flush()
+	return path, w.Flush()
 }
 
 // ParseProxyLine 解析 "IP:端口" 或裸 IP，端口缺省为 443

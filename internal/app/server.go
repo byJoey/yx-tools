@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -394,7 +393,7 @@ func (s *Server) handleCron(w http.ResponseWriter, r *http.Request) {
 		}
 		self := SelfPath()
 		cmd := fmt.Sprintf("cd %s && %s %s >> yx-cron.log 2>&1",
-			shellQuote(filepath.Dir(self)), shellQuote(self), in.Args)
+			shellQuote(DataDir()), shellQuote(self), in.Args)
 		if err := AddCronJob(in.Schedule, cmd, in.Replace); err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
@@ -452,7 +451,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	default:
 		name = ResultFile
 	}
-	data, err := os.ReadFile(name)
+	data, err := os.ReadFile(DataPath(name))
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "文件不存在，请先测速")
 		return

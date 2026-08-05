@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // cronTag 用于识别本程序写入的任务行，便于列出与清理
@@ -19,14 +20,39 @@ type CronJob struct {
 	Raw      string
 }
 
-// CronSupported 报告当前系统是否支持 crontab 方式
+// CronSupported 报告当前系统是否支持 crontab 方式。
+// 光看命令在不在不够：容器里 crontab 常常装着却不可用
+// （非 root 且二进制没有 suid 位，报 "must be suid to work properly"），
+// 所以实际跑一次 crontab -l 来判断。
 func CronSupported() bool {
 	if runtime.GOOS == "windows" {
 		return false
 	}
-	_, err := exec.LookPath("crontab")
-	return err == nil
+	cronOnce.Do(func() {
+		if _, err := exec.LookPath("crontab"); err != nil {
+			return
+		}
+		cmd := exec.Command("crontab", "-l")
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err == nil {
+			cronOK = true
+			return
+		}
+		// 没有任务时退出码非零属正常，只有明确的不可用信息才判定为不支持
+		msg := strings.ToLower(stderr.String())
+		cronOK = !strings.Contains(msg, "suid") &&
+			!strings.Contains(msg, "permission denied") &&
+			!strings.Contains(msg, "not allowed")
+	})
+	return cronOK
 }
+
+var (
+	cronOnce sync.Once
+	cronOK   bool
+)
 
 func readCrontab() ([]string, error) {
 	out, err := exec.Command("crontab", "-l").Output()

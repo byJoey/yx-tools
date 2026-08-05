@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -16,7 +17,7 @@ func WriteCSV(path string, rs []Result) error {
 	if path == "" {
 		path = ResultFile
 	}
-	f, err := os.Create(path)
+	f, err := os.Create(DataPath(path))
 	if err != nil {
 		return err
 	}
@@ -54,6 +55,12 @@ func orNA(s string) string {
 // ReadCSV 读回测速结果，兼容旧版本导出的列名
 func ReadCSV(path string) ([]Result, error) {
 	f, err := os.Open(path)
+	if err != nil && !filepath.IsAbs(path) {
+		// 当前目录不可写时结果会落在数据目录，读取也要跟过去
+		if alt, e := os.Open(DataPath(path)); e == nil {
+			f, err = alt, nil
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -164,11 +171,20 @@ func ParseProxySource(text string) ([]Result, error) {
 // 上一轮测速的存档）先提取出 IP:端口，再拿这份列表当输入源重测一遍。
 func ProxyListFromCSV(csvPath, outPath string, limit int) (int, error) {
 	rs, err := ReadCSV(csvPath)
-	if err != nil {
-		return 0, err
-	}
-	if len(rs) == 0 {
-		return 0, fmt.Errorf("%s 里没有可用的 IP", csvPath)
+	if err != nil || len(rs) == 0 {
+		// 来源也可能是每行 IP:端口 的纯列表（别人分享的多是这种），
+		// 按 CSV 读不出来就退回文本解析，与界面的导入行为保持一致
+		data, readErr := os.ReadFile(DataPath(csvPath))
+		if readErr != nil {
+			if err != nil {
+				return 0, err
+			}
+			return 0, fmt.Errorf("%s 里没有可用的 IP", csvPath)
+		}
+		rs, err = ParseProxySource(string(data))
+		if err != nil {
+			return 0, err
+		}
 	}
 	return WriteProxyList(outPath, rs, limit)
 }
@@ -181,7 +197,7 @@ func WriteProxyList(path string, rs []Result, limit int) (int, error) {
 	if limit > 0 && limit < len(rs) {
 		rs = rs[:limit]
 	}
-	f, err := os.Create(path)
+	f, err := os.Create(DataPath(path))
 	if err != nil {
 		return 0, err
 	}

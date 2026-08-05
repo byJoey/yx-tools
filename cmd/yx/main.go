@@ -124,6 +124,7 @@ func runWeb(args []string) {
 	}
 	url := "http://" + displayAddr(ln.Addr().String())
 	fmt.Printf("图形界面已启动: %s\n按 Ctrl+C 退出\n", url)
+	fmt.Printf("结果与配置存放于: %s\n", app.DataDir())
 	if !*noOpen {
 		go openBrowser(url)
 	}
@@ -235,7 +236,7 @@ func runTest(args []string) {
 	if err := app.WriteCSV(*out, rs); err != nil {
 		fmt.Fprintf(os.Stderr, "写入 %s 失败: %v\n", *out, err)
 	} else {
-		fmt.Printf("\n结果已保存: %s\n", *out)
+		fmt.Printf("\n结果已保存: %s\n", app.DataPath(*out))
 	}
 	doUpload(ctx, uf, rs)
 }
@@ -324,14 +325,15 @@ func runProxy(args []string) {
 		fmt.Fprintf(os.Stderr, "生成失败: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("已生成 %s，共 %d 条\n", *out, n)
+	outPath := app.DataPath(*out)
+	fmt.Printf("已生成 %s，共 %d 条\n", outPath, n)
 	if !*test {
 		return
 	}
 
 	fmt.Println("开始对反代列表测速")
 	o := app.Options{
-		Proxy: true, IPFile: *out, Count: *count,
+		Proxy: true, IPFile: outPath, Count: *count,
 		SpeedLimit: *speed, DelayLimit: *delay, Threads: *threads,
 		Colo: *colo, HTTPing: *httping, DisableDL: *noDL, Verbose: true,
 	}
@@ -348,7 +350,7 @@ func runProxy(args []string) {
 	if err := app.WriteCSV(app.ResultFile, rs); err != nil {
 		fmt.Fprintf(os.Stderr, "结果写入失败: %v\n", err)
 	} else {
-		fmt.Printf("\n结果已保存: %s\n", app.ResultFile)
+		fmt.Printf("\n结果已保存: %s\n", app.DataPath(app.ResultFile))
 	}
 	doUpload(ctx, uf, rs)
 }
@@ -399,16 +401,16 @@ func runCron(args []string) {
 		fmt.Printf("已清除 %d 条定时任务\n", n)
 
 	case *add != "":
-		// 用绝对路径，并切到程序所在目录，保证结果文件落在预期位置
+		// 用绝对路径，并切到数据目录，保证结果文件落在能写的位置
 		self := app.SelfPath()
-		dir := filepath.Dir(self)
+		dir := app.DataDir()
 		cmd := fmt.Sprintf("cd %s && %s %s >> yx-cron.log 2>&1", quote(dir), quote(self), *add)
 		if err := app.AddCronJob(*at, cmd, *replace); err != nil {
 			fmt.Fprintf(os.Stderr, "添加失败: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("已添加定时任务\n  时间: %s\n  命令: %s\n", *at, cmd)
-		fmt.Println("日志会写入程序目录下的 yx-cron.log")
+		fmt.Printf("日志会写入 %s\n", filepath.Join(dir, "yx-cron.log"))
 
 	default:
 		jobs, err := app.ListCronJobs()

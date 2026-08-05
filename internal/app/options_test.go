@@ -67,8 +67,8 @@ func TestNormalizeProxyMode(t *testing.T) {
 	if o.SampleSize != 0 || o.TestAll {
 		t.Errorf("反代模式不应抽样或穷举，got sample=%d all=%v", o.SampleSize, o.TestAll)
 	}
-	if o.IPFile != ProxyListFile {
-		t.Errorf("应默认读 %s，got %q", ProxyListFile, o.IPFile)
+	if o.IPFile != DataPath(ProxyListFile) {
+		t.Errorf("应默认读数据目录下的 %s，got %q", ProxyListFile, o.IPFile)
 	}
 
 	// 已指定输入源时不覆盖

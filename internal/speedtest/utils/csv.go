@@ -89,7 +89,8 @@ func ExportCsv(data []CloudflareIPData) {
 	}
 	fp, err := os.Create(Output)
 	if err != nil {
-		log.Fatalf("创建文件[%s]失败：%v", Output, err)
+		// 这里以前是 log.Fatalf，写不了文件会连带杀掉整个进程（Web 服务尤其致命）
+		log.Printf("创建文件[%s]失败：%v", Output, err)
 		return
 	}
 	defer fp.Close()

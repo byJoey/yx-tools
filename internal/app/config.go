@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"sync"
 )
 
@@ -50,13 +49,9 @@ func DefaultConfig() *Config {
 	}
 }
 
-// ConfigPath 返回配置文件路径，与可执行文件同目录
+// ConfigPath 返回配置文件路径，落在可写的数据目录里
 func ConfigPath() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return configName
-	}
-	return filepath.Join(filepath.Dir(exe), configName)
+	return DataPath(configName)
 }
 
 // LoadConfig 读取磁盘配置，不存在时返回默认值
