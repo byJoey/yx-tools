@@ -27,12 +27,16 @@ var (
 
 // pingReceived pingTotalTime
 func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration, string) {
+	tr := &http.Transport{
+		DialContext: getDialContext(ip),
+		//TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // 跳过证书验证
+	}
+	// 每个 IP 一个 Transport，用完必须回收：否则连接留在空闲池里等超时，
+	// 几千个候选会把本地临时端口占满，之后所有连接都建不起来。
+	defer tr.CloseIdleConnections()
 	hc := http.Client{
-		Timeout: time.Second * 2,
-		Transport: &http.Transport{
-			DialContext: getDialContext(ip),
-			//TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // 跳过证书验证
-		},
+		Timeout:   time.Second * 2,
+		Transport: tr,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse // 阻止重定向
 		},

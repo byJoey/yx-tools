@@ -118,7 +118,17 @@ func getDialContext(ip *net.IPAddr) func(ctx context.Context, network, address s
 		fakeSourceAddr = fmt.Sprintf("[%s]:%d", ip.String(), port)
 	}
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, network, fakeSourceAddr)
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, fakeSourceAddr)
+		if err != nil {
+			return nil, err
+		}
+		// 与 tcping 同理：测速连接用完即弃，走 RST 关闭而不是四次挥手，
+		// 否则每条连接占住一个本地端口 60 秒，几千个候选就会耗尽端口池，
+		// 波及机器上的其它业务。
+		if tc, ok := conn.(*net.TCPConn); ok {
+			_ = tc.SetLinger(0)
+		}
+		return conn, nil
 	}
 }
 
@@ -148,8 +158,11 @@ func printDownloadDebugInfo(ip *net.IPAddr, err error, statusCode int, url, last
 // return download Speed
 func downloadHandler(ip *net.IPAddr) (float64, string) {
 	var lastRedirectURL string // 用于记录最后一次重定向目标，以便在访问错误时输出
+	tr := &http.Transport{DialContext: getDialContext(ip)}
+	// 同 httping：每 IP 一个 Transport，用完回收，避免占满本地临时端口
+	defer tr.CloseIdleConnections()
 	client := &http.Client{
-		Transport: &http.Transport{DialContext: getDialContext(ip)},
+		Transport: tr,
 		Timeout:   Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			lastRedirectURL = req.URL.String() // 记录每次重定向的目标，以便在访问错误时输出

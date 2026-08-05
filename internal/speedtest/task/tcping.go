@@ -108,8 +108,16 @@ func (p *Ping) tcping(ip *net.IPAddr) (bool, time.Duration) {
 	if err != nil {
 		return false, 0
 	}
-	defer conn.Close()
 	duration := time.Since(startTime)
+	// 测速只关心握手耗时，不需要优雅关闭。
+	// 主动 close 会让本地端口进入 60 秒 TIME_WAIT，
+	// 几千个候选 × 每个 ping 多次会直接耗尽临时端口池，
+	// 表现为后续连接报 "can't assign requested address"。
+	// SO_LINGER=0 让内核直接发 RST，端口立即可复用。
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetLinger(0)
+	}
+	_ = conn.Close()
 	return true, duration
 }
 
