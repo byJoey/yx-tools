@@ -95,11 +95,9 @@ func (o *Options) Normalize() {
 	if o.TestURL == "" {
 		o.TestURL = DefaultTestURL
 	}
-	// 反代 IP 不是 Cloudflare 官方段，读不出机房代码，
-	// 所以不筛地区、只用 TCPing，且列表是什么就测什么，不抽样。
+	// 反代模式测的是给定的 IP:端口 列表，列表是什么就测什么，不抽样也不穷举。
+	// 地区筛选照常可用：反代最终回源到 Cloudflare，响应头里一样带得出机房代码。
 	if o.Proxy {
-		o.Colo = ""
-		o.HTTPing = false
 		o.SampleSize = 0
 		o.TestAll = false
 		if o.IPFile == "" && o.IPText == "" {

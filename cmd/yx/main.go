@@ -73,6 +73,7 @@ const usage = `Cloudflare 优选 IP 测速工具 v%s
   yx test -n 10 -upload api -domain a.b -uuid xxx -clear
   yx proxy -take 20                      生成 ips_ports.txt
   yx proxy -i 别人的结果.csv -test -n 10   导入外部 CSV 并对这些反代 IP 测速
+  yx proxy -test -colo HKG -http          只留回源到香港的反代 IP
   yx cron -add "test -n 10 -sl 2" -at "0 */6 * * *" -replace
 `
 
@@ -313,6 +314,8 @@ func runProxy(args []string) {
 	delay := fs.Int("tl", 1000, "平均延迟上限 ms")
 	threads := fs.Int("t", 200, "延迟测速线程数")
 	noDL := fs.Bool("nodl", false, "只测延迟")
+	colo := fs.String("colo", "", "地区机场码，逗号分隔")
+	httping := fs.Bool("http", false, "用真实 HTTP 请求测延迟")
 	uf := bindUploadFlags(fs)
 	_ = fs.Parse(args)
 
@@ -326,11 +329,11 @@ func runProxy(args []string) {
 		return
 	}
 
-	fmt.Println("开始对反代列表测速（不筛地区，反代 IP 读不出机房代码）")
+	fmt.Println("开始对反代列表测速")
 	o := app.Options{
 		Proxy: true, IPFile: *out, Count: *count,
 		SpeedLimit: *speed, DelayLimit: *delay, Threads: *threads,
-		DisableDL: *noDL, Verbose: true,
+		Colo: *colo, HTTPing: *httping, DisableDL: *noDL, Verbose: true,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

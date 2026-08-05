@@ -240,7 +240,7 @@
       <label>取前 N 条 <span class="hint">留空全取</span></label>
       <input type="number" id="proxyTake" min="1" max="10000" placeholder="留空则全部">
     </div>
-    <em class="note">反代 IP 不在 Cloudflare 官方段里，读不出机房代码，所以这里不筛地区、只测 TCP 延迟与下载速度</em>
+    <em class="note">测的就是你给的这批 IP，不做抽样。左侧的地区、延迟测法、下载测速这些参数照常生效</em>
     <div class="modal-actions">
       <button class="btn ghost" id="btnProxyClose">取消</button>
       <button class="btn primary" id="btnProxyRun">生成并测速</button>
