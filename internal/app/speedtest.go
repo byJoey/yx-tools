@@ -44,6 +44,7 @@ type Options struct {
 	IPFile     string  `json:"ip_file"`     // 自定义 IP 文件；为空则按 IPv6 选项自动下载
 	IPText     string  `json:"ip_text"`     // 直接指定 IP 段，优先于 IPFile
 	SampleSize int     `json:"sample_size"` // 参与延迟测速的候选 IP 数量，0 表示不限
+	Proxy      bool    `json:"proxy"`       // 反代模式：直接测给定的 IP:端口 列表
 	HTTPing    bool    `json:"httping"`     // 用真实 HTTP 请求测延迟（含 TLS 与服务端响应）
 	DisableDL  bool    `json:"disable_dl"`  // 只测延迟，跳过下载测速
 	TestAll    bool    `json:"test_all"`    // 测速全部 IP
@@ -93,6 +94,17 @@ func (o *Options) Normalize() {
 	}
 	if o.TestURL == "" {
 		o.TestURL = DefaultTestURL
+	}
+	// 反代 IP 不是 Cloudflare 官方段，读不出机房代码，
+	// 所以不筛地区、只用 TCPing，且列表是什么就测什么，不抽样。
+	if o.Proxy {
+		o.Colo = ""
+		o.HTTPing = false
+		o.SampleSize = 0
+		o.TestAll = false
+		if o.IPFile == "" && o.IPText == "" {
+			o.IPFile = ProxyListFile
+		}
 	}
 	if strings.TrimSpace(o.Colo) != "" {
 		o.HTTPing = true
@@ -211,7 +223,9 @@ func toResults(set utils.DownloadSpeedSet) []Result {
 			Sent:     d.Sended,
 			Received: d.Received,
 			LossRate: loss,
-			Delay:    float64(d.Delay.Milliseconds()),
+			// 用 Seconds()*1000 而非 Milliseconds()：后者是整数截断，
+			// 亚毫秒的握手（本机到近处节点常见）会被归零。
+			Delay:    d.Delay.Seconds() * 1000,
 			Speed:    d.DownloadSpeed / 1024 / 1024,
 			Colo:     d.Colo,
 			ColoName: ColoName(d.Colo),
