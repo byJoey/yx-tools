@@ -88,7 +88,9 @@ function fmtSpeed(v) {
 }
 function fmtDelay(v) {
   const cls = v <= 100 ? 'g' : v <= 250 ? 'y' : 'r';
-  return `<span class="${cls}">${v.toFixed(0)}</span>`;
+  // 亚毫秒延迟取整会变成 0，看着像没测到
+  const txt = v > 0 && v < 10 ? v.toFixed(2) : v.toFixed(0);
+  return `<span class="${cls}">${txt}</span>`;
 }
 
 function visibleRows() {
@@ -261,15 +263,48 @@ async function saveConfig() {
 }
 
 // ── 导出与上报 ────────────────────────────────────
-async function genProxy() {
+// ── 优选反代 ──────────────────────────────────────
+// 拿现成的 IP 列表当输入源重测一遍，沿用旧 Python 版的流程。
+function openProxy() {
+  $('#proxyMask').classList.remove('hidden');
+  updateProxyCount();
+}
+
+function updateProxyCount() {
+  const n = $('#proxyText').value
+    .split('\n')
+    .map(l => l.split('#')[0].trim())
+    .filter(l => l && !l.startsWith('#')).length;
+  $('#proxyCount').textContent = n ? n + ' 行' : '';
+}
+
+async function runProxy() {
+  const text = $('#proxyText').value.trim();
+  if (!text) { toast('先贴一份 IP 列表或 CSV', 'err'); return; }
+  if (state.running) { toast('正在测速，先停下来', 'err'); return; }
   try {
-    const r = await api('/api/proxy-list', {
+    const r = await api('/api/proxy-import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: +$('#cfgLimit').value || 0 }),
+      body: JSON.stringify({ text, take: +$('#proxyTake').value || 0 }),
     });
-    toast(`已生成 ${r.file}，共 ${r.count} 条`, 'ok');
-    if (r.count) download('proxy');
+    toast(`已生成 ${r.file}，共 ${r.count} 条，开始测速`, 'ok');
+    $('#proxyMask').classList.add('hidden');
+    await api('/api/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        proxy: true,
+        count: +$('#inCount').value || 10,
+        speed_limit: +$('#inSpeed').value || 0,
+        delay_limit: +$('#inDelay').value || 1000,
+        threads: +$('#inThread').value || 200,
+        disable_dl: state.noDL,
+      }),
+    });
+    setRunning(true);
+    $('#statusDot').className = 'dot run';
+    $('#statusText').textContent = '正在测反代列表…';
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -287,7 +322,7 @@ async function uploadAPI() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         worker_domain: domain, uuid: uuid,
-        limit: +$('#cfgLimit').value || 10,
+        limit: +$('#cfgLimit').value || 0,
         clear: $('#cfgClear').checked,
       }),
     });
@@ -310,7 +345,7 @@ async function uploadGitHub() {
         repo: repo,
         token: $('#cfgToken').value.trim(),
         path: $('#cfgPath').value.trim(),
-        limit: +$('#cfgLimit').value || 10,
+        limit: +$('#cfgLimit').value || 0,
       }),
     });
     toast(`已上传 ${r.count} 个 IP 到 GitHub`, 'ok');
@@ -549,7 +584,24 @@ async function removeCron() {
   $('#btnCfgClose').onclick = () => $('#mask').classList.add('hidden');
   $('#btnCfgSave').onclick = saveConfig;
   $('#mask').onclick = e => { if (e.target === $('#mask')) $('#mask').classList.add('hidden'); };
-  $('#btnProxy').onclick = genProxy;
+  $('#btnProxy').onclick = openProxy;
+  $('#btnProxyClose').onclick = () => $('#proxyMask').classList.add('hidden');
+  $('#proxyMask').onclick = e => { if (e.target === $('#proxyMask')) $('#proxyMask').classList.add('hidden'); };
+  $('#btnProxyRun').onclick = runProxy;
+  $('#proxyText').addEventListener('input', updateProxyCount);
+  $('#proxyFile').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      $('#proxyText').value = String(reader.result);
+      $('#proxyFileName').textContent = f.name;
+      updateProxyCount();
+    };
+    reader.onerror = () => toast('读取文件失败', 'err');
+    reader.readAsText(f);
+  });
   $('#btnUploadAPI').onclick = uploadAPI;
   $('#btnUploadGH').onclick = uploadGitHub;
   $('#btnDownload').onclick = () => download('result');

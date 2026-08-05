@@ -143,9 +143,9 @@
     <div class="toolbar">
       <input type="text" id="filterText" placeholder="筛选 IP 或地区" autocomplete="off">
       <span class="spacer"></span>
-      <button class="btn ghost" id="btnProxy" title="生成 ips_ports.txt 并下载">
+      <button class="btn ghost" id="btnProxy" title="导入外部 IP 列表并测速">
         <svg viewBox="0 0 24 24" class="ico"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-        反代列表
+        优选反代
       </button>
       <button class="btn ghost" id="btnDownload" title="下载测速结果 result.csv">
         <svg viewBox="0 0 24 24" class="ico"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -209,12 +209,41 @@
     </div>
     <div class="field">
       <label>上报数量</label>
-      <input type="number" id="cfgLimit" value="10" min="1" max="100">
+      <input type="number" id="cfgLimit" placeholder="留空上传全部" min="1" max="1000">
     </div>
     <label class="check"><input type="checkbox" id="cfgClear" checked> 上报前清空 Worker 已有 IP</label>
     <div class="modal-actions">
       <button class="btn ghost" id="btnCfgClose">取消</button>
       <button class="btn primary" id="btnCfgSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 优选反代弹窗 -->
+<div class="mask hidden" id="proxyMask">
+  <div class="modal">
+    <h3>优选反代</h3>
+    <em class="note">拿现成的 IP 列表来测：可以是别人分享的测速 CSV，也可以是每行 IP:端口 的纯列表</em>
+    <div class="field">
+      <label>IP 来源 <span class="hint" id="proxyCount"></span></label>
+      <textarea id="proxyText" rows="7" placeholder="104.20.18.132:443&#10;172.70.96.220:2053&#10;&#10;或直接粘贴 result.csv 的内容"></textarea>
+      <label class="filepick">
+        <input type="file" id="proxyFile" accept=".txt,.csv,text/plain" hidden>
+        <span class="btn ghost sm">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          从文件导入
+        </span>
+        <em id="proxyFileName"></em>
+      </label>
+    </div>
+    <div class="field">
+      <label>取前 N 条 <span class="hint">留空全取</span></label>
+      <input type="number" id="proxyTake" min="1" max="10000" placeholder="留空则全部">
+    </div>
+    <em class="note">反代 IP 不在 Cloudflare 官方段里，读不出机房代码，所以这里不筛地区、只测 TCP 延迟与下载速度</em>
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnProxyClose">取消</button>
+      <button class="btn primary" id="btnProxyRun">生成并测速</button>
     </div>
   </div>
 </div>

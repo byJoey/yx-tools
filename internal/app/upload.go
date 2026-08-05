@@ -132,13 +132,14 @@ func UploadToAPI(ctx context.Context, t APITarget, rs []Result, limit int, clear
 	return len(items), nil
 }
 
-// nodeName 生成节点备注，如「香港-12ms」
+// nodeName 生成节点备注，如「香港-8.34MB/s」。
+// 沿用旧 Python 版的格式：选优选 IP 看的是速度，延迟放名字里参考价值低。
 func nodeName(r Result) string {
 	name := ColoName(r.Colo)
-	if r.Delay > 0 {
-		return fmt.Sprintf("%s-%.0fms", name, r.Delay)
+	if name == "未知" {
+		name = "未知地区"
 	}
-	return name
+	return fmt.Sprintf("%s-%.2fMB/s", name, r.Speed)
 }
 
 // GitHubTarget 描述 GitHub 上传位置

@@ -27,7 +27,7 @@ const usage = `Cloudflare 优选 IP 测速工具 v%s
   yx                        启动图形界面（默认，自动打开浏览器）
   yx web [选项]             启动图形界面
   yx test [选项]            命令行测速
-  yx proxy [选项]           从结果生成反代列表
+  yx proxy [选项]           优选反代：从 CSV 提取 IP:端口，可接着重测
   yx upload [选项]          上报已有结果
   yx cron [选项]            管理定时任务（Linux/macOS）
 
@@ -52,7 +52,7 @@ const usage = `Cloudflare 优选 IP 测速工具 v%s
   -domain / -uuid      Worker 域名与 UUID
   -repo / -token       GitHub 仓库与 Token
   -path                GitHub 文件路径（默认 cloudflare_ips.txt）
-  -limit               上报数量（默认 10）
+  -limit               上报数量（默认 0，即全部）
   -clear               上报前清空 Worker 已有 IP
 
 界面选项 (web):
@@ -71,7 +71,8 @@ const usage = `Cloudflare 优选 IP 测速工具 v%s
   yx web -listen 0.0.0.0:8080            在服务器上跑，浏览器远程访问
   yx test -colo HKG,SIN -n 20            测香港和新加坡，取 20 个
   yx test -n 10 -upload api -domain a.b -uuid xxx -clear
-  yx proxy -limit 20                     生成 ips_ports.txt
+  yx proxy -take 20                      生成 ips_ports.txt
+  yx proxy -i 别人的结果.csv -test -n 10   导入外部 CSV 并对这些反代 IP 测速
   yx cron -add "test -n 10 -sl 2" -at "0 */6 * * *" -replace
 `
 
@@ -187,7 +188,7 @@ func bindUploadFlags(fs *flag.FlagSet) uploadFlags {
 		repo:   fs.String("repo", "", "GitHub 仓库 owner/repo"),
 		token:  fs.String("token", "", "GitHub Token"),
 		path:   fs.String("path", "", "GitHub 文件路径"),
-		limit:  fs.Int("limit", 10, "上报数量"),
+		limit:  fs.Int("limit", 0, "上报数量，0 表示全部"),
 		clear:  fs.Bool("clear", false, "上报前清空 Worker 已有 IP"),
 	}
 }
@@ -246,7 +247,7 @@ func printResults(rs []app.Result) {
 	fmt.Printf("\n%-18s %-6s %-9s %-11s %-7s %s\n", "IP", "端口", "延迟(ms)", "速度(MB/s)", "丢包", "地区")
 	fmt.Println(strings.Repeat("-", 68))
 	for _, r := range rs {
-		fmt.Printf("%-18s %-6d %-9.0f %-11.2f %-7.0f%% %s\n",
+		fmt.Printf("%-18s %-6d %-9.2f %-11.2f %-7.0f%% %s\n",
 			r.IP, r.Port, r.Delay, r.Speed, r.LossRate*100, r.ColoName)
 	}
 }
@@ -299,25 +300,54 @@ func doUpload(ctx context.Context, uf uploadFlags, rs []app.Result) {
 	}
 }
 
-// ── 生成反代列表 ──────────────────────────────────
+// ── 优选反代 ──────────────────────────────────────
+// 从任意测速 CSV 提取 IP:端口 生成列表，可接着拿这份列表重测一遍。
 func runProxy(args []string) {
 	fs := flag.NewFlagSet("proxy", flag.ExitOnError)
-	in := fs.String("i", app.ResultFile, "测速结果 CSV")
+	in := fs.String("i", app.ResultFile, "来源 CSV，可以是别人分享的结果")
 	out := fs.String("o", app.ProxyListFile, "输出文件")
-	limit := fs.Int("limit", 0, "取前 N 条，0 表示全部")
+	take := fs.Int("take", 0, "从 CSV 取前 N 条，0 表示全部")
+	test := fs.Bool("test", false, "生成后直接对这份列表测速")
+	count := fs.Int("n", 10, "测速数量")
+	speed := fs.Float64("sl", 0, "下载速度下限 MB/s")
+	delay := fs.Int("tl", 1000, "平均延迟上限 ms")
+	threads := fs.Int("t", 200, "延迟测速线程数")
+	noDL := fs.Bool("nodl", false, "只测延迟")
+	uf := bindUploadFlags(fs)
 	_ = fs.Parse(args)
 
-	rs, err := app.ReadCSV(*in)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "读取失败: %v\n", err)
-		os.Exit(1)
-	}
-	n, err := app.WriteProxyList(*out, rs, *limit)
+	n, err := app.ProxyListFromCSV(*in, *out, *take)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "生成失败: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("已生成 %s，共 %d 条\n", *out, n)
+	if !*test {
+		return
+	}
+
+	fmt.Println("开始对反代列表测速（不筛地区，反代 IP 读不出机房代码）")
+	o := app.Options{
+		Proxy: true, IPFile: *out, Count: *count,
+		SpeedLimit: *speed, DelayLimit: *delay, Threads: *threads,
+		DisableDL: *noDL, Verbose: true,
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	rs, err := app.Run(ctx, o, func(p app.Progress) {
+		fmt.Println("· " + p.Message)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "测速失败: %v\n", err)
+		os.Exit(1)
+	}
+	printResults(rs)
+	if err := app.WriteCSV(app.ResultFile, rs); err != nil {
+		fmt.Fprintf(os.Stderr, "结果写入失败: %v\n", err)
+	} else {
+		fmt.Printf("\n结果已保存: %s\n", app.ResultFile)
+	}
+	doUpload(ctx, uf, rs)
 }
 
 // ── 上报已有结果 ──────────────────────────────────
