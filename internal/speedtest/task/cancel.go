@@ -10,9 +10,12 @@ var runCtx context.Context
 // SetContext 设置本次测速的取消信号，传 nil 表示不可取消
 func SetContext(ctx context.Context) { runCtx = ctx }
 
-func canceled() bool {
+// Canceled 报告本次测速是否已被取消
+func Canceled() bool {
 	if runCtx == nil {
 		return false
 	}
 	return runCtx.Err() != nil
 }
+
+func canceled() bool { return Canceled() }

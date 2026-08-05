@@ -48,3 +48,32 @@ func TestNormalizeHTTPing(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeProxyMode(t *testing.T) {
+	// 反代 IP 不是 Cloudflare 官方段，读不出机房代码，
+	// 所以反代模式必须清掉地区筛选与 HTTPing，也不做抽样。
+	o := Options{
+		Proxy: true, Colo: "HKG", HTTPing: true,
+		SampleSize: 500, TestAll: true,
+	}
+	o.Normalize()
+	if o.Colo != "" {
+		t.Errorf("地区应被清空，got %q", o.Colo)
+	}
+	if o.HTTPing {
+		t.Error("反代模式不应走 HTTPing")
+	}
+	if o.SampleSize != 0 || o.TestAll {
+		t.Errorf("反代模式不应抽样或穷举，got sample=%d all=%v", o.SampleSize, o.TestAll)
+	}
+	if o.IPFile != ProxyListFile {
+		t.Errorf("应默认读 %s，got %q", ProxyListFile, o.IPFile)
+	}
+
+	// 已指定输入源时不覆盖
+	o2 := Options{Proxy: true, IPFile: "mine.txt"}
+	o2.Normalize()
+	if o2.IPFile != "mine.txt" {
+		t.Errorf("不该覆盖用户指定的文件，got %q", o2.IPFile)
+	}
+}

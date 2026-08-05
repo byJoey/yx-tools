@@ -47,6 +47,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/cron", s.handleCron)
 	s.mux.HandleFunc("/api/download", s.handleDownload)
 	s.mux.HandleFunc("/api/system", s.handleSystem)
+	s.mux.HandleFunc("/api/proxy-import", s.handleProxyImport)
 }
 
 // ServeHTTP 实现 http.Handler
@@ -411,6 +412,34 @@ func (s *Server) handleCron(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeErr(w, http.StatusMethodNotAllowed, "不支持的方法")
 	}
+}
+
+// handleProxyImport 接收一份外部 CSV 或 IP:端口 文本，生成反代列表。
+// 对应旧 Python 版的优选反代第一步：把别人分享的结果转成可测的列表。
+func (s *Server) handleProxyImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "请用 POST")
+		return
+	}
+	var in struct {
+		Text string `json:"text"`
+		Take int    `json:"take"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	rs, err := ParseProxySource(in.Text)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	n, err := WriteProxyList(ProxyListFile, rs, in.Take)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": n, "file": ProxyListFile})
 }
 
 // handleDownload 下载测速结果或反代列表

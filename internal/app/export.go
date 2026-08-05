@@ -3,8 +3,10 @@ package app
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
+	"strings"
 )
 
 var csvHeader = []string{"IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度(MB/s)", "地区码", "端口"}
@@ -56,14 +58,23 @@ func ReadCSV(path string) ([]Result, error) {
 		return nil, err
 	}
 	defer f.Close()
-	r := csv.NewReader(f)
+	return parseCSV(f, path)
+}
+
+// parseCSVText 解析一段 CSV 文本，供界面上粘贴的内容使用
+func parseCSVText(text string) ([]Result, error) {
+	return parseCSV(strings.NewReader(text), "输入内容")
+}
+
+func parseCSV(src io.Reader, name string) ([]Result, error) {
+	r := csv.NewReader(src)
 	r.FieldsPerRecord = -1
 	rows, err := r.ReadAll()
 	if err != nil {
 		return nil, err
 	}
 	if len(rows) < 2 {
-		return nil, fmt.Errorf("%s 没有数据", path)
+		return nil, fmt.Errorf("%s 没有数据", name)
 	}
 	idx := map[string]int{}
 	for i, h := range rows[0] {
@@ -110,6 +121,56 @@ func ReadCSV(path string) ([]Result, error) {
 		})
 	}
 	return out, nil
+}
+
+// ParseProxySource 解析用户贴进来的一段文本，可能是测速结果 CSV，
+// 也可能是每行 IP:端口 的裸列表。两种都接受，省得用户自己分辨格式。
+func ParseProxySource(text string) ([]Result, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, fmt.Errorf("内容是空的")
+	}
+	// 带表头的按 CSV 解析，能保住速度、地区这些列
+	first := text
+	if i := strings.IndexAny(first, "\r\n"); i >= 0 {
+		first = first[:i]
+	}
+	if strings.Contains(first, ",") && strings.Contains(first, "IP") {
+		if rs, err := parseCSVText(text); err == nil && len(rs) > 0 {
+			return rs, nil
+		}
+	}
+	var out []Result
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		// 允许 GitHub 那种 IP:端口#备注 的写法
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = strings.TrimSpace(line[:i])
+		}
+		ip, port, ok := ParseProxyLine(line)
+		if !ok {
+			continue
+		}
+		out = append(out, Result{IP: ip, Port: port})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("没解析出可用的 IP，每行应是 IP 或 IP:端口")
+	}
+	return out, nil
+}
+
+// ProxyListFromCSV 从任意测速结果 CSV 生成反代列表。
+// 沿用旧 Python 版的优选反代流程：外部拿到的 CSV（别人分享的结果、
+// 上一轮测速的存档）先提取出 IP:端口，再拿这份列表当输入源重测一遍。
+func ProxyListFromCSV(csvPath, outPath string, limit int) (int, error) {
+	rs, err := ReadCSV(csvPath)
+	if err != nil {
+		return 0, err
+	}
+	if len(rs) == 0 {
+		return 0, fmt.Errorf("%s 里没有可用的 IP", csvPath)
+	}
+	return WriteProxyList(outPath, rs, limit)
 }
 
 // WriteProxyList 生成 IP:端口 格式的反代列表
