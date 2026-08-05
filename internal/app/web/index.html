@@ -15,6 +15,9 @@
   </div>
   <div class="topbar-right">
     <span class="stat" id="statResult">结果 0</span>
+    <button class="btn ghost" id="btnCron" title="定时任务">
+      <svg viewBox="0 0 24 24" class="ico"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </button>
     <button class="btn ghost" id="btnConfig" title="上报配置">
       <svg viewBox="0 0 24 24" class="ico"><path d="M12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.34.2.7.19 1.06z"/></svg>
     </button>
@@ -61,6 +64,37 @@
     </div>
 
     <div class="field">
+      <label>延迟测法</label>
+      <div class="seg" id="segPing">
+        <button class="on" data-ping="tcp">TCP 握手</button>
+        <button data-ping="http">真实连接</button>
+      </div>
+      <em class="note" id="pingNote">只做 TCP 握手，快，但数字偏低</em>
+    </div>
+
+    <div class="field">
+      <label>候选 IP 数量 <span class="hint" id="poolHint"></span></label>
+      <div class="seg" id="segPool">
+        <button data-pool="500">500</button>
+        <button class="on" data-pool="1000">1000</button>
+        <button data-pool="2000">2000</button>
+        <button data-pool="0">全部</button>
+        <button data-pool="custom">自定义</button>
+      </div>
+      <input type="number" id="inPool" class="hidden" min="1" max="100000" step="100" placeholder="填个数字，比如 5000">
+      <em class="note" id="poolNote">从 Cloudflare 官方 IP 段里随机抽 1000 个来测延迟</em>
+    </div>
+
+    <div class="field">
+      <label>下载测速</label>
+      <div class="seg" id="segDL">
+        <button class="on" data-dl="on">测下载速度</button>
+        <button data-dl="off">跳过</button>
+      </div>
+      <em class="note" id="dlNote">测完延迟再下载大文件，测出真实速度</em>
+    </div>
+
+    <div class="field">
       <label>延迟测速线程 <span class="hint" id="threadVal">200</span></label>
       <input type="range" id="inThread" min="10" max="1000" step="10" value="200">
     </div>
@@ -73,10 +107,18 @@
       </div>
       <div class="field">
         <label>自定义 IP 段（每行一条，支持 IP:端口）</label>
-        <textarea id="inIPText" rows="4" placeholder="留空则自动获取 Cloudflare 官方 IP 段"></textarea>
+        <em class="note">不填就用 Cloudflare 官方 IP 段，填了才会覆盖掉</em>
+        <textarea id="inIPText" rows="4" placeholder="104.16.0.0/12&#10;1.1.1.1:2053"></textarea>
+        <label class="filepick">
+          <input type="file" id="inIPFile" accept=".txt,.csv,text/plain" hidden>
+          <span class="btn ghost sm">
+            <svg viewBox="0 0 24 24" class="ico"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            从文件导入
+          </span>
+          <em id="ipFileName"></em>
+        </label>
       </div>
-      <label class="check"><input type="checkbox" id="inNoDL"> 只测延迟，跳过下载测速</label>
-      <label class="check"><input type="checkbox" id="inAll"> 测速全部 IP（慢）</label>
+
     </details>
 
     <div class="actions">
@@ -101,9 +143,13 @@
     <div class="toolbar">
       <input type="text" id="filterText" placeholder="筛选 IP 或地区" autocomplete="off">
       <span class="spacer"></span>
-      <button class="btn ghost" id="btnProxy" title="生成 ips_ports.txt">
-        <svg viewBox="0 0 24 24" class="ico"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <button class="btn ghost" id="btnProxy" title="生成 ips_ports.txt 并下载">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
         反代列表
+      </button>
+      <button class="btn ghost" id="btnDownload" title="下载测速结果 result.csv">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        下载
       </button>
       <button class="btn ghost" id="btnUploadAPI" title="上报到 Worker">
         <svg viewBox="0 0 24 24" class="ico"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -169,6 +215,39 @@
     <div class="modal-actions">
       <button class="btn ghost" id="btnCfgClose">取消</button>
       <button class="btn primary" id="btnCfgSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 定时任务弹窗 -->
+<div class="mask hidden" id="cronMask">
+  <div class="modal">
+    <h3>定时任务</h3>
+    <div class="field">
+      <label>已有任务 <span class="hint" id="cronHint"></span></label>
+      <div class="cron-list" id="cronList"></div>
+    </div>
+    <hr>
+    <div class="field">
+      <label>执行频率</label>
+      <div class="presets" id="cronPresets">
+        <button data-cron="0 */6 * * *">每 6 小时</button>
+        <button data-cron="0 */12 * * *">每 12 小时</button>
+        <button data-cron="0 4 * * *">每天 4 点</button>
+        <button data-cron="0 4 * * 1">每周一 4 点</button>
+      </div>
+      <input type="text" id="cronSchedule" placeholder="0 */6 * * *" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>执行的命令参数</label>
+      <input type="text" id="cronArgs" placeholder="test -n 10 -sl 2" autocomplete="off">
+    </div>
+    <label class="check"><input type="checkbox" id="cronReplace" checked> 添加前先清掉本工具已有的任务</label>
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnCronRemove">清空任务</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="btnCronClose">关闭</button>
+      <button class="btn primary" id="btnCronAdd">添加</button>
     </div>
   </div>
 </div>

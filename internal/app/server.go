@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -41,6 +44,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/proxy-list", s.handleProxyList)
 	s.mux.HandleFunc("/api/upload/api", s.handleUploadAPI)
 	s.mux.HandleFunc("/api/upload/github", s.handleUploadGitHub)
+	s.mux.HandleFunc("/api/cron", s.handleCron)
+	s.mux.HandleFunc("/api/download", s.handleDownload)
+	s.mux.HandleFunc("/api/system", s.handleSystem)
 }
 
 // ServeHTTP 实现 http.Handler
@@ -78,6 +84,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			"delay_limit":      c.DelayLimit,
 			"threads":          c.Threads,
 			"test_url":         c.TestURL,
+			"sample_size":      c.SampleSize,
+			"httping":          c.HTTPing,
+			"disable_dl":       c.DisableDL,
 			"port":             c.Port,
 		})
 	case http.MethodPost:
@@ -182,6 +191,7 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	c.Colo, c.IPv6, c.Count = o.Colo, o.IPv6, o.Count
 	c.SpeedLimit, c.DelayLimit, c.Threads = o.SpeedLimit, o.DelayLimit, o.Threads
 	c.TestURL, c.Port = o.TestURL, o.Port
+	c.SampleSize, c.HTTPing, c.DisableDL = o.SampleSize, o.HTTPing, o.DisableDL
 	_ = SaveConfig(c)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -335,4 +345,98 @@ func (s *Server) handleUploadGitHub(w http.ResponseWriter, r *http.Request) {
 	c.GitHubRepo, c.GitHubToken, c.GitHubPath = in.Repo, in.Token, in.Path
 	_ = SaveConfig(c)
 	writeJSON(w, http.StatusOK, map[string]any{"count": n})
+}
+
+// handleSystem 返回运行环境信息，供界面决定展示哪些功能
+func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"cron_supported": CronSupported(),
+		"self_path":      SelfPath(),
+		"result_file":    ResultFile,
+		"proxy_file":     ProxyListFile,
+		"default_url":    DefaultTestURL,
+	})
+}
+
+// handleCron 管理定时任务
+func (s *Server) handleCron(w http.ResponseWriter, r *http.Request) {
+	if !CronSupported() {
+		writeErr(w, http.StatusNotImplemented, "当前系统不支持 crontab，请用系统自带的计划任务")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		jobs, err := ListCronJobs()
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out := make([]map[string]string, 0, len(jobs))
+		for _, j := range jobs {
+			out = append(out, map[string]string{"schedule": j.Schedule, "command": j.Command})
+		}
+		writeJSON(w, http.StatusOK, out)
+
+	case http.MethodPost:
+		var in struct {
+			Schedule string `json:"schedule"`
+			Args     string `json:"args"`
+			Replace  bool   `json:"replace"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeErr(w, http.StatusBadRequest, "请求格式错误")
+			return
+		}
+		if strings.TrimSpace(in.Args) == "" {
+			writeErr(w, http.StatusBadRequest, "请填写测速参数")
+			return
+		}
+		self := SelfPath()
+		cmd := fmt.Sprintf("cd %s && %s %s >> yx-cron.log 2>&1",
+			shellQuote(filepath.Dir(self)), shellQuote(self), in.Args)
+		if err := AddCronJob(in.Schedule, cmd, in.Replace); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "command": cmd})
+
+	case http.MethodDelete:
+		n, err := RemoveCronJobs()
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"count": n})
+
+	default:
+		writeErr(w, http.StatusMethodNotAllowed, "不支持的方法")
+	}
+}
+
+// handleDownload 下载测速结果或反代列表
+func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("kind")
+	var name string
+	switch kind {
+	case "proxy":
+		name = ProxyListFile
+	default:
+		name = ResultFile
+	}
+	data, err := os.ReadFile(name)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "文件不存在，请先测速")
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename="+name)
+	_, _ = w.Write(data)
+}
+
+// shellQuote 给含空格的路径加引号
+func shellQuote(s string) string {
+	if strings.ContainsAny(s, " \t") {
+		return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	}
+	return s
 }
