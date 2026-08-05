@@ -54,6 +54,8 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # sha tag 只在推分支时带分支名前缀：tag 触发时 {{branch}} 为空，
+      # 会生成 "-39355cf" 这种以 - 开头的非法 tag，导致整步失败
       - name: 提取元数据（标签、摘要等）
         id: meta
         uses: docker/metadata-action@v5
@@ -66,7 +68,8 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha,prefix={{branch}}-
+            type=sha,prefix={{branch}}-,enable=${{ github.ref_type == 'branch' }}
+            type=sha,enable=${{ github.ref_type == 'tag' }}
             type=raw,value=latest,enable={{is_default_branch}}
           # tag 不符合 semver 时（如 v3）不让整步失败
           flavor: |
