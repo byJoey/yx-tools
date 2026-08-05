@@ -69,6 +69,9 @@ func (p *Ping) Run() utils.PingDelaySet {
 		utils.Cyan.Printf("开始延迟测速（模式：TCP, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n", TCPPort, utils.InputMinDelay.Milliseconds(), utils.InputMaxDelay.Milliseconds(), utils.InputMaxLossRate)
 	}
 	for _, ip := range p.ips {
+		if canceled() { // 用户点了停止，别再派发新的探测
+			break
+		}
 		p.wg.Add(1)
 		p.control <- false
 		go p.start(ip)

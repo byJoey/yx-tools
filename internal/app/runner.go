@@ -88,6 +88,18 @@ func (r *Runner) Results() []Result {
 	return out
 }
 
+// LastStage 返回最近一次进度事件的阶段名
+func (r *Runner) LastStage() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for i := len(r.history) - 1; i >= 0; i-- {
+		if r.history[i].Stage != "" {
+			return r.history[i].Stage
+		}
+	}
+	return ""
+}
+
 // LastOptions 返回最近一次使用的参数
 func (r *Runner) LastOptions() Options {
 	r.mu.RLock()
