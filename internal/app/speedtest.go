@@ -171,11 +171,29 @@ func Run(ctx context.Context, o Options, report func(Progress)) ([]Result, error
 	task.SetContext(ctx)
 	defer task.SetContext(nil)
 
-	if colo == "" {
-		emit(Progress{Stage: "ping", Message: "正在测试延迟"})
-	} else {
-		emit(Progress{Stage: "ping", Message: "正在测试延迟并匹配地区 " + colo})
+	// 把内核进度条的推进转成事件，让界面看得见进度而不是干等。
+	// 几千个 IP 逐个上报会淹掉事件通道，所以按时间节流。
+	stage := "ping"
+	pingMsg := "正在测试延迟"
+	if colo != "" {
+		pingMsg += "并匹配地区 " + colo
 	}
+	var lastTick time.Time
+	utils.OnProgress = func(cur, total int) {
+		msg := pingMsg
+		if stage == "download" {
+			msg = "正在测试下载速度"
+		}
+		// 收尾那一下一定要发，否则进度条会停在 99%
+		if cur < total && time.Since(lastTick) < 200*time.Millisecond {
+			return
+		}
+		lastTick = time.Now()
+		emit(Progress{Stage: stage, Message: msg, Current: cur, Total: total})
+	}
+	defer func() { utils.OnProgress = nil }()
+
+	emit(Progress{Stage: "ping", Message: pingMsg})
 	pingData := task.NewPing().Run().FilterDelay().FilterLossRate()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -188,6 +206,7 @@ func Run(ctx context.Context, o Options, report func(Progress)) ([]Result, error
 	if o.DisableDL {
 		speedData = utils.DownloadSpeedSet(pingData)
 	} else {
+		stage = "download"
 		emit(Progress{Stage: "download", Message: "正在测试下载速度", Total: o.Count})
 		speedData = task.TestDownloadSpeed(pingData)
 	}

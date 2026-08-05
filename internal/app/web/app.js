@@ -143,12 +143,29 @@ function renderTable() {
 }
 
 // ── 运行状态 ──────────────────────────────────────
-function setRunning(on) {
+function setRunning(on, keepProgress) {
   state.running = on;
   $('#btnStart').classList.toggle('hidden', on);
   $('#btnStop').classList.toggle('hidden', !on);
   $('#statusDot').className = 'dot' + (on ? ' run' : '');
-  $('#progressFill').className = on ? 'indet' : 'idle';
+  if (keepProgress) return; // 进度事件自己在画，别覆盖成滚动动画
+  const fill = $('#progressFill');
+  fill.style.width = '';
+  fill.className = on ? 'indet' : 'idle';
+}
+
+// 有确切进度就画百分比，没有才退回滚动动画
+function setProgress(cur, total) {
+  const fill = $('#progressFill');
+  if (total > 0) {
+    const pct = Math.min(100, Math.round(cur / total * 100));
+    fill.className = '';
+    fill.style.width = pct + '%';
+    return pct;
+  }
+  fill.className = 'indet';
+  fill.style.width = '';
+  return null;
 }
 
 function connectEvents() {
@@ -156,18 +173,26 @@ function connectEvents() {
   es.onmessage = ev => {
     let e;
     try { e = JSON.parse(ev.data); } catch (_) { return; }
-    if (e.message) $('#statusText').textContent = e.message;
+    if (e.message) {
+      // 带上「已测 N/M」，让人一眼看出还在动
+      $('#statusText').textContent = e.total > 0
+        ? `${e.message}  ${e.current}/${e.total}`
+        : e.message;
+    }
+    if (e.type === 'progress') setProgress(e.current, e.total);
     if (e.type === 'done') {
       state.results = e.results || [];
       renderTable();
-      setRunning(false);
+      setProgress(1, 1); // 收到 100% 再消失，别停在半截
+      setRunning(false, true);
+      setTimeout(() => { if (!state.running) setRunning(false); }, 600);
       toast(`测速完成，${state.results.length} 个结果`, 'ok');
     } else if (e.type === 'error') {
       setRunning(false);
       $('#statusDot').className = 'dot err';
       toast(e.message || '测速失败', 'err');
     } else if (e.type === 'progress') {
-      setRunning(true);
+      setRunning(true, true);
     }
   };
   es.onerror = () => { /* 浏览器会自动重连 */ };
@@ -295,10 +320,13 @@ async function runProxy() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         proxy: true,
+        colo: state.picked.join(','),
         count: +$('#inCount').value || 10,
         speed_limit: +$('#inSpeed').value || 0,
         delay_limit: +$('#inDelay').value || 1000,
         threads: +$('#inThread').value || 200,
+        test_url: $('#inURL').value.trim(),
+        httping: state.httping,
         disable_dl: state.noDL,
       }),
     });
