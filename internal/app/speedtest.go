@@ -20,12 +20,13 @@ import (
 
 // 默认参数
 const (
-	// 下载测速地址，用 Cloudflare 官方测速端点，任意 CF IP 直连都能下满。
-	// 注意 bytes 有上限：100000000 及以上直接返回 403（9000000000 这类值
-	// 拿不到任何数据），99MB 是实测能过的最大值，尽量填满测速窗口。
+	// 下载测速地址。选取标准是「走 Cloudflare 且任意 CF IP 直连都能下满」，
+	// 文件还要足够大，单次请求就能填满测速窗口。这里是 1GB。
 	// 备选历史：上游默认的 cf.xiu2.xyz 返回 403；
-	// cloudflaremirrors 现在返回 200 但 body 是空的。
-	DefaultTestURL  = "https://speed.cloudflare.com/__down?bytes=99000000"
+	// cloudflaremirrors 返回 200 但 body 是空的；
+	// speed.cloudflare.com 的 bytes 超过 100MB 会 403，最大只能取 99MB，
+	// 在快线路上填不满窗口，得靠多轮请求凑。
+	DefaultTestURL  = "https://xy.kg/test"
 	CloudflareIPv4  = "https://www.cloudflare.com/ips-v4/"
 	CloudflareIPv6  = "https://www.cloudflare.com/ips-v6/"
 	IPv4File        = "Cloudflare.txt"
