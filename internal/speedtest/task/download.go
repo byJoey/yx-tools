@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	bufferSize                     = 1024
-	defaultURL                     = "https://cf.xiu2.xyz/url"
+	bufferSize = 1024
+	// 上游原本的 cf.xiu2.xyz 已经返回 403，换成实测可用的地址：
+	// 1GB 文件，走 Cloudflare，任意 CF IP 直连都能下满
+	defaultURL                     = "https://xy.kg/test"
 	defaultTimeout                 = 10 * time.Second
 	defaultDisableDownload         = false
 	defaultTestNum                 = 10
