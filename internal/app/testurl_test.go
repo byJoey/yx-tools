@@ -16,6 +16,7 @@ func TestLoadConfigMigratesDeadTestURL(t *testing.T) {
 	}{
 		{"上游默认地址已 403", "https://cf.xiu2.xyz/url", true},
 		{"镜像站返回空 body", "https://cloudflaremirrors.com/archlinux/iso/latest/archlinux-x86_64.iso", true},
+		{"误设成默认值的私人域名要清掉", "https://xy.kg/test", true},
 		{"用户自己填的可用地址要保留", "https://speed.cloudflare.com/__down?bytes=50000000", false},
 		{"自建地址要保留", "https://my-own-mirror.example/bigfile", false},
 	}

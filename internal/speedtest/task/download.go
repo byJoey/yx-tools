@@ -15,9 +15,9 @@ import (
 
 const (
 	bufferSize = 1024
-	// 上游原本的 cf.xiu2.xyz 已经返回 403，换成实测可用的地址：
-	// 1GB 文件，走 Cloudflare，任意 CF IP 直连都能下满
-	defaultURL                     = "https://xy.kg/test"
+	// 上游原本的 cf.xiu2.xyz 已经返回 403，换成 Cloudflare 官方测速端点。
+	// 默认值只能用公共服务，不能指向私人域名（流量由域名主人买单）
+	defaultURL                     = "https://speed.cloudflare.com/__down?bytes=99000000"
 	defaultTimeout                 = 10 * time.Second
 	defaultDisableDownload         = false
 	defaultTestNum                 = 10

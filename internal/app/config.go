@@ -77,6 +77,9 @@ func LoadConfig() *Config {
 var deadTestURLs = []string{
 	"cf.xiu2.xyz",           // 返回 403
 	"cloudflaremirrors.com", // 返回 200 但 body 是空的
+	// v3.0.3/v3.0.4 误把私人域名设成了默认值，用户配置里存下来的要清掉，
+	// 否则升级后还在替域名主人烧流量
+	"xy.kg",
 }
 
 func isDeadTestURL(u string) bool {
