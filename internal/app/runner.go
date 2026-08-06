@@ -14,6 +14,7 @@ type Event struct {
 	Current  int      `json:"current,omitempty"`
 	Total    int      `json:"total,omitempty"`
 	Results  []Result `json:"results,omitempty"`
+	Result   *Result  `json:"result,omitempty"` // 下载测速逐条出结果时带上
 	Finished bool     `json:"finished"`
 	At       int64    `json:"at"`
 }
@@ -62,6 +63,11 @@ func (r *Runner) broadcast(e Event) {
 	r.history = append(r.history, e)
 	if len(r.history) > 200 {
 		r.history = r.history[len(r.history)-200:]
+	}
+	// 逐条结果同时累积到 results，这样中途刷新页面也能
+	// 通过 /api/results 拿到已经测出来的部分
+	if e.Type == "result" && e.Result != nil {
+		r.results = append(r.results, *e.Result)
 	}
 	for ch := range r.subs {
 		select {
@@ -118,6 +124,7 @@ func (r *Runner) Start(o Options) bool {
 	r.running = true
 	r.cancel = cancel
 	r.history = nil
+	r.results = nil // 上一轮的结果别串到这一轮
 	r.lastOpts = o
 	r.mu.Unlock()
 
@@ -130,6 +137,11 @@ func (r *Runner) Start(o Options) bool {
 			cancel()
 		}()
 		rs, err := Run(ctx, o, func(p Progress) {
+			if p.Result != nil {
+				// 单条结果单独发一种事件，前端可以立刻插进表格
+				r.broadcast(Event{Type: "result", Stage: p.Stage, Result: p.Result})
+				return
+			}
 			r.broadcast(Event{Type: "progress", Stage: p.Stage, Message: p.Message, Current: p.Current, Total: p.Total})
 		})
 		if err != nil {

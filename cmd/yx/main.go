@@ -45,6 +45,8 @@ const usage = `Cloudflare 优选 IP 测速工具 v%s
   -all    穷举每个网段的全部 IP（很慢，会忽略 -c）
   -http   用真实 HTTP 请求测延迟（含 TLS 握手与服务端响应），比 TCP 握手准
   -nodl   只测延迟，跳过下载测速
+  -dt     单个 IP 的下载测速时长上限，秒（默认 10）
+  -mt     整轮测速的时长上限，秒（默认 0 不限）；到点就拿已测出的结果收工
   -o      结果输出文件（默认 result.csv）
 
 上报选项 (test 末尾追加，或单独用 upload):
@@ -210,6 +212,8 @@ func runTest(args []string) {
 	testAll := fs.Bool("all", false, "穷举全部 IP")
 	httping := fs.Bool("http", false, "用真实 HTTP 请求测延迟")
 	noDL := fs.Bool("nodl", false, "只测延迟")
+	dlTimeout := fs.Int("dt", 10, "单个 IP 的下载测速时长上限（秒）")
+	maxRun := fs.Int("mt", 0, "整轮测速的时长上限（秒），0 不限")
 	out := fs.String("o", app.ResultFile, "结果输出文件")
 	uf := bindUploadFlags(fs)
 	_ = fs.Parse(args)
@@ -219,15 +223,14 @@ func runTest(args []string) {
 		SpeedLimit: *speed, DelayLimit: *delay, Threads: *threads,
 		Port: *port, TestURL: *url, IPFile: *ipFile, DisableDL: *noDL,
 		SampleSize: *sample, TestAll: *testAll, HTTPing: *httping,
+		DLTimeout: *dlTimeout, MaxRunTime: *maxRun,
 		Verbose: true,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	rs, err := app.Run(ctx, o, func(p app.Progress) {
-		fmt.Println("· " + p.Message)
-	})
+	rs, err := app.Run(ctx, o, reportProgress)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "测速失败: %v\n", err)
 		os.Exit(1)
@@ -239,6 +242,18 @@ func runTest(args []string) {
 		fmt.Printf("\n结果已保存: %s\n", app.DataPath(*out))
 	}
 	doUpload(ctx, uf, rs)
+}
+
+// reportProgress 打印测速过程。下载阶段逐条回来，测一个报一个，
+// 不用等整批跑完才看到东西。
+func reportProgress(p app.Progress) {
+	if p.Result != nil {
+		r := p.Result
+		fmt.Printf("  %-18s %-6d %6.2f ms  %7.2f MB/s  %s\n",
+			r.IP, r.Port, r.Delay, r.Speed, r.ColoName)
+		return
+	}
+	fmt.Println("· " + p.Message)
 }
 
 func printResults(rs []app.Result) {
@@ -317,6 +332,8 @@ func runProxy(args []string) {
 	noDL := fs.Bool("nodl", false, "只测延迟")
 	colo := fs.String("colo", "", "地区机场码，逗号分隔")
 	httping := fs.Bool("http", false, "用真实 HTTP 请求测延迟")
+	dlTimeout := fs.Int("dt", 10, "单个 IP 的下载测速时长上限（秒）")
+	maxRun := fs.Int("mt", 0, "整轮测速的时长上限（秒），0 不限")
 	uf := bindUploadFlags(fs)
 	_ = fs.Parse(args)
 
@@ -336,12 +353,11 @@ func runProxy(args []string) {
 		Proxy: true, IPFile: outPath, Count: *count,
 		SpeedLimit: *speed, DelayLimit: *delay, Threads: *threads,
 		Colo: *colo, HTTPing: *httping, DisableDL: *noDL, Verbose: true,
+		DLTimeout: *dlTimeout, MaxRunTime: *maxRun,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	rs, err := app.Run(ctx, o, func(p app.Progress) {
-		fmt.Println("· " + p.Message)
-	})
+	rs, err := app.Run(ctx, o, reportProgress)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "测速失败: %v\n", err)
 		os.Exit(1)

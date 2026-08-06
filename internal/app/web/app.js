@@ -180,6 +180,13 @@ function connectEvents() {
         : e.message;
     }
     if (e.type === 'progress') setProgress(e.current, e.total);
+    if (e.type === 'result' && e.result) {
+      // 下载测速逐条回来，测一个显示一个，不用等整批跑完
+      state.results.push(e.result);
+      renderTable();
+      setRunning(true, true);
+      return;
+    }
     if (e.type === 'done') {
       state.results = e.results || [];
       renderTable();
@@ -215,6 +222,8 @@ async function start() {
     test_all: $('#segPool button[data-pool="0"]').classList.contains('on'),
     httping: state.httping,
     disable_dl: state.noDL,
+    dl_timeout: +$('#inDLTimeout').value || 10,
+    max_runtime: +$('#inMaxRun').value || 0,
   };
   try {
     await api('/api/start', {
@@ -225,6 +234,9 @@ async function start() {
     setRunning(true);
     $('#statusDot').className = 'dot run';
     $('#statusText').textContent = '正在启动…';
+    // 清掉上一轮，逐条结果才不会叠在旧数据上
+    state.results = [];
+    renderTable();
   } catch (e) {
     toast(e.message, 'err');
   }
@@ -250,6 +262,8 @@ async function loadConfig(uploadOnly) {
     if (c.threads) { $('#inThread').value = c.threads; $('#threadVal').textContent = c.threads; }
     if (c.port) $('#inPort').value = c.port;
     if (c.test_url) $('#inURL').value = c.test_url;
+    if (c.dl_timeout) $('#inDLTimeout').value = c.dl_timeout;
+    if (c.max_runtime != null) $('#inMaxRun').value = c.max_runtime;
     setPing(!!c.httping);
     setDL(!!c.disable_dl);
     if (c.sample_size != null) {
@@ -550,6 +564,12 @@ function buildCronArgs() {
 
   if (state.httping) parts.push('-http');
   if (state.noDL) parts.push('-nodl');
+
+  // 超时设置：非默认值才带上
+  const dt = +$('#inDLTimeout').value;
+  if (dt > 0 && dt !== 10) push('-dt', dt);
+  const mt = +$('#inMaxRun').value;
+  if (mt > 0) push('-mt', mt);
 
   // 测速地址与默认值相同就不写了，命令太长反而看不清
   const url = $('#inURL').value.trim();

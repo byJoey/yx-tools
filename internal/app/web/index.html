@@ -118,6 +118,18 @@
           <em id="ipFileName"></em>
         </label>
       </div>
+      <div class="grid2">
+        <div class="field">
+          <label>单个 IP 测速上限</label>
+          <input type="number" id="inDLTimeout" value="10" min="1" max="120">
+          <em class="note">秒。慢的 IP 到点就跳过，不会一直耗着</em>
+        </div>
+        <div class="field">
+          <label>整轮时间上限</label>
+          <input type="number" id="inMaxRun" value="0" min="0" max="86400">
+          <em class="note">秒。0 是不限；到点就拿已测出的结果收工</em>
+        </div>
+      </div>
 
     </details>
 

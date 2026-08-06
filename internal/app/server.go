@@ -88,6 +88,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			"httping":          c.HTTPing,
 			"disable_dl":       c.DisableDL,
 			"port":             c.Port,
+			"dl_timeout":       c.DLTimeout,
+			"max_runtime":      c.MaxRunTime,
 		})
 	case http.MethodPost:
 		cur := LoadConfig()
@@ -192,6 +194,7 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	c.SpeedLimit, c.DelayLimit, c.Threads = o.SpeedLimit, o.DelayLimit, o.Threads
 	c.TestURL, c.Port = o.TestURL, o.Port
 	c.SampleSize, c.HTTPing, c.DisableDL = o.SampleSize, o.HTTPing, o.DisableDL
+	c.DLTimeout, c.MaxRunTime = o.DLTimeout, o.MaxRunTime
 	_ = SaveConfig(c)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

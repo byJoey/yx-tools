@@ -26,6 +26,8 @@ type Config struct {
 	SampleSize int     `json:"sample_size"`
 	HTTPing    bool    `json:"httping"`
 	DisableDL  bool    `json:"disable_dl"`
+	DLTimeout  int     `json:"dl_timeout"`
+	MaxRunTime int     `json:"max_runtime"`
 }
 
 const configName = "yx-config.json"
@@ -46,6 +48,7 @@ func DefaultConfig() *Config {
 		TestURL:    DefaultTestURL,
 		Port:       443,
 		SampleSize: 1000,
+		DLTimeout:  10,
 	}
 }
 
@@ -72,6 +75,9 @@ func LoadConfig() *Config {
 	}
 	if cfg.Port <= 0 {
 		cfg.Port = 443
+	}
+	if cfg.DLTimeout <= 0 {
+		cfg.DLTimeout = 10
 	}
 	c := *cfg
 	return &c

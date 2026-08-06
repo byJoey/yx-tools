@@ -20,8 +20,12 @@ import (
 
 // 默认参数
 const (
-	// 走 Cloudflare 的大文件，用于下载测速；原上游默认地址已失效
-	DefaultTestURL  = "https://cloudflaremirrors.com/archlinux/iso/latest/archlinux-x86_64.iso"
+	// 下载测速地址，用 Cloudflare 官方测速端点，任意 CF IP 直连都能下满。
+	// 注意 bytes 有上限：100000000 及以上直接返回 403（9000000000 这类值
+	// 拿不到任何数据），99MB 是实测能过的最大值，尽量填满测速窗口。
+	// 备选历史：上游默认的 cf.xiu2.xyz 返回 403；
+	// cloudflaremirrors 现在返回 200 但 body 是空的。
+	DefaultTestURL  = "https://speed.cloudflare.com/__down?bytes=99000000"
 	CloudflareIPv4  = "https://www.cloudflare.com/ips-v4/"
 	CloudflareIPv6  = "https://www.cloudflare.com/ips-v6/"
 	IPv4File        = "Cloudflare.txt"
@@ -48,6 +52,8 @@ type Options struct {
 	HTTPing    bool    `json:"httping"`     // 用真实 HTTP 请求测延迟（含 TLS 与服务端响应）
 	DisableDL  bool    `json:"disable_dl"`  // 只测延迟，跳过下载测速
 	TestAll    bool    `json:"test_all"`    // 测速全部 IP
+	DLTimeout  int     `json:"dl_timeout"`  // 单个 IP 的下载测速时长上限，秒
+	MaxRunTime int     `json:"max_runtime"` // 整个任务的时长上限，秒，0 表示不限
 	Verbose    bool    `json:"-"`           // 是否让测速内核输出自己的进度条
 }
 
@@ -70,6 +76,8 @@ type Progress struct {
 	Message string `json:"message"` // 面向用户的一句话
 	Current int    `json:"current"`
 	Total   int    `json:"total"`
+	// Result 只在下载测速逐条出结果时带上，让界面不必等整批跑完
+	Result *Result `json:"result,omitempty"`
 }
 
 // 测速内核使用大量包级变量，同一进程内必须串行执行
@@ -91,6 +99,12 @@ func (o *Options) Normalize() {
 	}
 	if o.Port <= 0 {
 		o.Port = 443
+	}
+	if o.DLTimeout <= 0 {
+		o.DLTimeout = 10
+	}
+	if o.MaxRunTime < 0 {
+		o.MaxRunTime = 0
 	}
 	if o.TestURL == "" {
 		o.TestURL = DefaultTestURL
@@ -138,6 +152,13 @@ func Run(ctx context.Context, o Options, report func(Progress)) (rs []Result, er
 	}()
 
 	o.Normalize()
+	// 整体超时：候选很多时单个 IP 的 Timeout 兜不住总时长，
+	// 给任务一个总闸，到点按已测出的结果收工而不是无限跑下去
+	if o.MaxRunTime > 0 {
+		var stop context.CancelFunc
+		ctx, stop = context.WithTimeout(ctx, time.Duration(o.MaxRunTime)*time.Second)
+		defer stop()
+	}
 	utils.SetQuiet(!o.Verbose)
 	defer utils.SetQuiet(false)
 	emit := func(p Progress) {
@@ -163,6 +184,7 @@ func Run(ctx context.Context, o Options, report func(Progress)) (rs []Result, er
 	task.TCPPort = o.Port
 	task.URL = o.TestURL
 	task.MinSpeed = o.SpeedLimit
+	task.Timeout = time.Duration(o.DLTimeout) * time.Second
 	task.Disable = o.DisableDL
 	task.TestAll = o.TestAll
 	task.SampleSize = o.SampleSize
@@ -207,7 +229,8 @@ func Run(ctx context.Context, o Options, report func(Progress)) (rs []Result, er
 
 	emit(Progress{Stage: "ping", Message: pingMsg})
 	pingData := task.NewPing().Run().FilterDelay().FilterLossRate()
-	if err := ctx.Err(); err != nil {
+	// 延迟阶段就超时的话，拿已经测通的 IP 继续往下走，别整批作废
+	if err := ctx.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
 	}
 	if len(pingData) == 0 {
@@ -215,14 +238,33 @@ func Run(ctx context.Context, o Options, report func(Progress)) (rs []Result, er
 	}
 
 	var speedData utils.DownloadSpeedSet
-	if o.DisableDL {
+	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
+	if o.DisableDL || timedOut {
+		// 已经到时限就不再开下载阶段，直接拿延迟结果收工
 		speedData = utils.DownloadSpeedSet(pingData)
 	} else {
 		stage = "download"
 		emit(Progress{Stage: "download", Message: "正在测试下载速度", Total: o.Count})
+		// 逐条上报：下载测速本来就是一个个串行跑的，
+		// 没必要让用户盯着进度条等整批结束
+		if deadline, ok := ctx.Deadline(); ok {
+			task.Deadline = deadline
+		}
+		// 下载阶段关掉内核自己的进度条：它每刷一次就回到行首，
+		// 会把逐条结果直接刷没。延迟阶段的进度条照常留着。
+		utils.SetQuiet(true)
+		task.OnSpeedResult = func(d utils.CloudflareIPData) {
+			r := toResult(d)
+			emit(Progress{Stage: "download", Message: "正在测试下载速度", Result: &r})
+		}
 		speedData = task.TestDownloadSpeed(pingData)
+		utils.SetQuiet(!o.Verbose)
+		task.OnSpeedResult = nil
+		task.Deadline = time.Time{}
 	}
-	if err := ctx.Err(); err != nil {
+	// 跑到整体时限属于正常收工，已经测出来的结果照常交付；
+	// 只有用户主动取消才丢弃
+	if err := ctx.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
 	}
 
@@ -238,27 +280,7 @@ func Run(ctx context.Context, o Options, report func(Progress)) (rs []Result, er
 func toResults(set utils.DownloadSpeedSet) []Result {
 	out := make([]Result, 0, len(set))
 	for _, d := range set {
-		port := d.Port
-		if port <= 0 {
-			port = task.TCPPort
-		}
-		var loss float64
-		if d.Sended > 0 {
-			loss = float64(d.Sended-d.Received) / float64(d.Sended)
-		}
-		out = append(out, Result{
-			IP:       d.IP.String(),
-			Port:     port,
-			Sent:     d.Sended,
-			Received: d.Received,
-			LossRate: loss,
-			// 用 Seconds()*1000 而非 Milliseconds()：后者是整数截断，
-			// 亚毫秒的握手（本机到近处节点常见）会被归零。
-			Delay:    d.Delay.Seconds() * 1000,
-			Speed:    d.DownloadSpeed / 1024 / 1024,
-			Colo:     d.Colo,
-			ColoName: ColoName(d.Colo),
-		})
+		out = append(out, toResult(d))
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Speed != out[j].Speed {
@@ -267,6 +289,31 @@ func toResults(set utils.DownloadSpeedSet) []Result {
 		return out[i].Delay < out[j].Delay
 	})
 	return out
+}
+
+// toResult 转换单条测速数据
+func toResult(d utils.CloudflareIPData) Result {
+	port := d.Port
+	if port <= 0 {
+		port = task.TCPPort
+	}
+	var loss float64
+	if d.Sended > 0 {
+		loss = float64(d.Sended-d.Received) / float64(d.Sended)
+	}
+	return Result{
+		IP:       d.IP.String(),
+		Port:     port,
+		Sent:     d.Sended,
+		Received: d.Received,
+		LossRate: loss,
+		// 用 Seconds()*1000 而非 Milliseconds()：后者是整数截断，
+		// 亚毫秒的握手（本机到近处节点常见）会被归零。
+		Delay:    d.Delay.Seconds() * 1000,
+		Speed:    d.DownloadSpeed / 1024 / 1024,
+		Colo:     d.Colo,
+		ColoName: ColoName(d.Colo),
+	}
 }
 
 // ensureIPFile 下载并缓存 Cloudflare 官方 IP 段

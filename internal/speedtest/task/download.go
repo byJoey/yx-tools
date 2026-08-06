@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/byJoey/yx-tools/internal/speedtest/utils"
-
-	"github.com/VividCortex/ewma"
 )
 
 const (
@@ -32,6 +30,15 @@ var (
 	TestCount = defaultTestNum
 	MinSpeed  = defaultMinSpeed
 )
+
+// OnSpeedResult 在每个 IP 下载测速完成后调用，让界面能逐条出结果，
+// 不必等整批跑完。为空时行为与以前一致。
+var OnSpeedResult func(utils.CloudflareIPData)
+
+// Deadline 是下载阶段的整体截止时间，零值表示不限。
+// 单个 IP 有 Timeout 兜底，但候选很多时总时长依然可能拖到不可接受，
+// 这里给一个总闸。
+var Deadline time.Time
 
 func checkDownloadDefault() {
 	if URL == "" {
@@ -77,10 +84,17 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 		if canceled() { // 用户点了停止
 			break
 		}
+		// 到了整体截止时间就收工，已测出的结果照常保留
+		if !Deadline.IsZero() && time.Now().After(Deadline) {
+			break
+		}
 		speed, colo := downloadHandler(ipSet[i].IP)
 		ipSet[i].DownloadSpeed = speed
 		if ipSet[i].Colo == "" { // 只有当 Colo 是空的时候，才写入，否则代表之前是 httping 测速并获取过了
 			ipSet[i].Colo = colo
+		}
+		if OnSpeedResult != nil {
+			OnSpeedResult(ipSet[i])
 		}
 		// 在每个 IP 下载测速后，以 [下载速度下限] 条件过滤结果
 		if speed >= MinSpeed*1024*1024 {
@@ -156,14 +170,50 @@ func printDownloadDebugInfo(ip *net.IPAddr, err error, statusCode int, url, last
 }
 
 // return download Speed
+// downloadHandler 在 Timeout 窗口内持续下载，返回平均速度与机房码。
+// 单个请求的字节数有限（测速端点通常有上限），在快节点上零点几秒就下完，
+// 这么短的样本受 TCP 慢启动和调度抖动影响极大——实测同一 IP 连测两次能差
+// 三倍。所以窗口没跑满就继续发下一次请求，把样本时间拉够。
 func downloadHandler(ip *net.IPAddr) (float64, string) {
+	deadline := time.Now().Add(Timeout)
+	var (
+		totalRead int64
+		colo      string
+		started   = time.Now()
+	)
+	for time.Now().Before(deadline) {
+		n, c, ok := downloadOnce(ip, deadline)
+		totalRead += n
+		if colo == "" {
+			colo = c
+		}
+		if !ok || n == 0 {
+			break
+		}
+	}
+	elapsed := time.Since(started)
+	if totalRead <= 0 || elapsed <= 0 {
+		return 0.0, colo
+	}
+	return float64(totalRead) / elapsed.Seconds(), colo
+}
+
+// downloadOnce 发一次请求并读到底（或读到 deadline），
+// 返回读到的字节数、机房码，以及是否值得继续下一轮。
+func downloadOnce(ip *net.IPAddr, deadline time.Time) (int64, string, bool) {
 	var lastRedirectURL string // 用于记录最后一次重定向目标，以便在访问错误时输出
 	tr := &http.Transport{DialContext: getDialContext(ip)}
 	// 同 httping：每 IP 一个 Transport，用完回收，避免占满本地临时端口
 	defer tr.CloseIdleConnections()
+	// 客户端超时按窗口剩余时间收窄：第二轮之后窗口所剩无几，
+	// 仍用完整 Timeout 会跑过头，把已经读到的数据白白丢掉。
+	budget := time.Until(deadline)
+	if budget <= 0 {
+		return 0, "", false
+	}
 	client := &http.Client{
 		Transport: tr,
-		Timeout:   Timeout,
+		Timeout:   budget,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			lastRedirectURL = req.URL.String() // 记录每次重定向的目标，以便在访问错误时输出
 			if len(via) > 10 {                 // 限制最多重定向 10 次
@@ -183,7 +233,7 @@ func downloadHandler(ip *net.IPAddr) (float64, string) {
 		if utils.Debug { // 调试模式下，输出更多信息
 			utils.Red.Printf("[调试] IP: %s, 下载测速请求创建失败，错误信息: %v, 下载测速地址: %s\n", ip.String(), err, URL)
 		}
-		return 0.0, ""
+		return 0, "", false
 	}
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36")
@@ -193,61 +243,33 @@ func downloadHandler(ip *net.IPAddr) (float64, string) {
 		if utils.Debug { // 调试模式下，输出更多信息
 			printDownloadDebugInfo(ip, err, 0, URL, lastRedirectURL, response)
 		}
-		return 0.0, ""
+		return 0, "", false
 	}
 	defer response.Body.Close()
 	if response.StatusCode != 200 {
 		if utils.Debug { // 调试模式下，输出更多信息
 			printDownloadDebugInfo(ip, nil, response.StatusCode, URL, lastRedirectURL, response)
 		}
-		return 0.0, ""
+		return 0, "", false
 	}
 
 	// 通过头部参数获取地区码
 	colo := getHeaderColo(response.Header)
 
-	timeStart := time.Now()           // 开始时间（当前）
-	timeEnd := timeStart.Add(Timeout) // 加上下载测速时间得到的结束时间
-
-	contentLength := response.ContentLength // 文件大小
+	// 单纯把这一次响应体读完（或读到窗口结束），
+	// 速度由 downloadHandler 按总字节和总耗时统一计算。
 	buffer := make([]byte, bufferSize)
-
-	var (
-		contentRead     int64 = 0
-		timeSlice             = Timeout / 100
-		timeCounter           = 1
-		lastContentRead int64 = 0
-	)
-
-	var nextTime = timeStart.Add(timeSlice * time.Duration(timeCounter))
-	e := ewma.NewMovingAverage()
-
-	// 循环计算，如果文件下载完了（两者相等），则退出循环（终止测速）
-	for contentLength != contentRead {
-		currentTime := time.Now()
-		if currentTime.After(nextTime) {
-			timeCounter++
-			nextTime = timeStart.Add(timeSlice * time.Duration(timeCounter))
-			e.Add(float64(contentRead - lastContentRead))
-			lastContentRead = contentRead
+	var contentRead int64
+	for {
+		if time.Now().After(deadline) {
+			return contentRead, colo, false
 		}
-		// 如果超出下载测速时间，则退出循环（终止测速）
-		if currentTime.After(timeEnd) {
-			break
-		}
-		bufferRead, err := response.Body.Read(buffer)
+		n, err := response.Body.Read(buffer)
+		contentRead += int64(n)
 		if err != nil {
-			if err != io.EOF { // 如果文件下载过程中遇到报错（如 Timeout），且并不是因为文件下载完了，则退出循环（终止测速）
-				break
-			} else if contentLength == -1 { // 文件下载完成 且 文件大小未知，则退出循环（终止测速），例如：https://speed.cloudflare.com/__down?bytes=200000000 这样的，如果在 10 秒内就下载完成了，会导致测速结果明显偏低甚至显示为 0.00（下载速度太快时）
-				break
-			}
-			// 获取上个时间片
-			last_time_slice := timeStart.Add(timeSlice * time.Duration(timeCounter-1))
-			// 下载数据量 / (用当前时间 - 上个时间片/ 时间片)
-			e.Add(float64(contentRead-lastContentRead) / (float64(currentTime.Sub(last_time_slice)) / float64(timeSlice)))
+			// io.EOF 表示这一次下完了，可以再来一轮把窗口填满；
+			// 其它错误说明这条连接不好使，不必再试。
+			return contentRead, colo, err == io.EOF
 		}
-		contentRead += int64(bufferRead)
 	}
-	return e.Value() / (Timeout.Seconds() / 120), colo
 }
