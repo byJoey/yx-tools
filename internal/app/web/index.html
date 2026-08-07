@@ -235,10 +235,10 @@
 <div class="mask hidden" id="proxyMask">
   <div class="modal">
     <h3>优选反代</h3>
-    <em class="note">拿现成的 IP 列表来测：可以是别人分享的测速 CSV，也可以是每行 IP:端口 的纯列表</em>
+    <em class="note">拿现成的 IP 列表来测：FOFA 导出的资产 CSV、别人分享的测速 CSV，或每行 IP:端口 的纯列表。CSV 只读 ip 和 port 两列，其他列不管</em>
     <div class="field">
       <label>IP 来源 <span class="hint" id="proxyCount"></span></label>
-      <textarea id="proxyText" rows="7" placeholder="104.20.18.132:443&#10;172.70.96.220:2053&#10;&#10;或直接粘贴 result.csv 的内容"></textarea>
+      <textarea id="proxyText" rows="7" placeholder="104.20.18.132:443&#10;172.70.96.220:2053&#10;&#10;或直接粘贴带 ip,port 列的 CSV"></textarea>
       <label class="filepick">
         <input type="file" id="proxyFile" accept=".txt,.csv,text/plain" hidden>
         <span class="btn ghost sm">

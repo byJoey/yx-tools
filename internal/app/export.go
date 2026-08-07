@@ -73,6 +73,15 @@ func parseCSVText(text string) ([]Result, error) {
 	return parseCSV(strings.NewReader(text), "输入内容")
 }
 
+// normalizeHeader 把列名压成可比对的形式：去 BOM、去空白、转小写。
+// FOFA 那类资产导出的列名是全小写的 ip / port，本工具导出的是
+// "IP 地址" / "端口"，归一化后用同一套名字匹配。
+func normalizeHeader(h string) string {
+	h = strings.TrimPrefix(h, "\ufeff")
+	h = strings.ToLower(strings.TrimSpace(h))
+	return strings.ReplaceAll(h, " ", "")
+}
+
 func parseCSV(src io.Reader, name string) ([]Result, error) {
 	r := csv.NewReader(src)
 	r.FieldsPerRecord = -1
@@ -85,19 +94,19 @@ func parseCSV(src io.Reader, name string) ([]Result, error) {
 	}
 	idx := map[string]int{}
 	for i, h := range rows[0] {
-		idx[h] = i
+		idx[normalizeHeader(h)] = i
 	}
 	pick := func(row []string, names ...string) string {
 		for _, n := range names {
-			if i, ok := idx[n]; ok && i < len(row) {
-				return row[i]
+			if i, ok := idx[normalizeHeader(n)]; ok && i < len(row) {
+				return strings.TrimSpace(row[i])
 			}
 		}
 		return ""
 	}
 	out := make([]Result, 0, len(rows)-1)
 	for _, row := range rows[1:] {
-		ip := pick(row, "IP 地址", "IP", "ip")
+		ip := pick(row, "IP 地址", "IP")
 		if ip == "" {
 			continue
 		}
@@ -130,8 +139,25 @@ func parseCSV(src io.Reader, name string) ([]Result, error) {
 	return out, nil
 }
 
-// ParseProxySource 解析用户贴进来的一段文本，可能是测速结果 CSV，
+// hasIPColumn 判断首行是不是带 ip 列的表头。
+// FOFA 这类资产导出的表头是全小写的 host,ip,port，
+// 本工具导出的是 "IP 地址,...,端口"，都要认出来。
+func hasIPColumn(header string) bool {
+	if !strings.Contains(header, ",") {
+		return false
+	}
+	for _, f := range strings.Split(header, ",") {
+		switch normalizeHeader(f) {
+		case "ip", "ip地址":
+			return true
+		}
+	}
+	return false
+}
+
+// ParseProxySource 解析用户贴进来的一段文本，可能是带表头的 CSV，
 // 也可能是每行 IP:端口 的裸列表。两种都接受，省得用户自己分辨格式。
+// CSV 只认 ip 与 port 两列，其余列（host、title、protocol 这些）一概不看。
 func ParseProxySource(text string) ([]Result, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -142,7 +168,7 @@ func ParseProxySource(text string) ([]Result, error) {
 	if i := strings.IndexAny(first, "\r\n"); i >= 0 {
 		first = first[:i]
 	}
-	if strings.Contains(first, ",") && strings.Contains(first, "IP") {
+	if hasIPColumn(first) {
 		if rs, err := parseCSVText(text); err == nil && len(rs) > 0 {
 			return rs, nil
 		}
